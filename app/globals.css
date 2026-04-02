@@ -19,6 +19,43 @@
   }
 }
 
+@media (min-width: 768px) {
+  * {
+    cursor: none !important;
+  }
+
+  .custom-cursor {
+    position: fixed;
+    width: 18px;
+    height: 18px;
+    border-radius: 9999px;
+    border: 1.5px solid rgba(15, 23, 42, 0.45);
+    background: rgba(255, 255, 255, 0.35);
+    backdrop-filter: blur(6px);
+    pointer-events: none;
+    z-index: 9999;
+    transform: translate(-50%, -50%);
+    transition:
+      width 120ms ease,
+      height 120ms ease,
+      background-color 120ms ease,
+      border-color 120ms ease,
+      transform 80ms ease;
+    will-change: transform, width, height;
+  }
+
+  .custom-cursor.cursor-active {
+    width: 34px;
+    height: 34px;
+    border-color: rgba(16, 185, 129, 0.8);
+    background: rgba(16, 185, 129, 0.14);
+  }
+
+  .custom-cursor.cursor-click {
+    transform: translate(-50%, -50%) scale(0.9);
+  }
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
