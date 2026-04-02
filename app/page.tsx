@@ -1,65 +1,135 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useState } from "react";
+
+type ApiResponse = {
+  success: boolean;
+  tool?: string;
+  outputText?: string;
+  wordCount?: number;
+  tone?: string;
+  mode?: string;
+  notes?: string[];
+  message?: string;
+};
+
+export default function HomePage() {
+  const [inputText, setInputText] = useState("");
+  const [outputText, setOutputText] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [tone, setTone] = useState("natural");
+  const [mode, setMode] = useState("standard");
+
+  const handleHumanize = async () => {
+    setLoading(true);
+    setError("");
+    setOutputText("");
+
+    try {
+      const response = await fetch("/api/humanize", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          inputText,
+          tone,
+          mode,
+          wordCount: inputText.trim()
+            ? inputText.trim().split(/\s+/).length
+            : 0,
+        }),
+      });
+
+      const data: ApiResponse = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Something went wrong");
+      }
+
+      setOutputText(data.outputText || "");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
+    <main className="min-h-screen bg-white px-6 py-10">
+      <div className="mx-auto max-w-4xl">
+        <h1 className="text-3xl font-bold text-gray-900">RewritifyAI</h1>
+        <p className="mt-2 text-gray-600">
+          Clean AI writing MVP — Humanize your text.
+        </p>
+
+        <div className="mt-8 grid gap-6 md:grid-cols-2">
+          <div className="rounded-2xl border border-gray-200 p-5 shadow-sm">
+            <label className="mb-2 block text-sm font-medium text-gray-700">
+              Input Text
+            </label>
+
+            <textarea
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              placeholder="Paste your text here..."
+              className="min-h-[250px] w-full rounded-xl border border-gray-300 p-4 outline-none focus:border-black"
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm text-gray-600">Tone</label>
+                <select
+                  value={tone}
+                  onChange={(e) => setTone(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                >
+                  <option value="natural">Natural</option>
+                  <option value="formal">Formal</option>
+                  <option value="friendly">Friendly</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="mb-1 block text-sm text-gray-600">Mode</label>
+                <select
+                  value={mode}
+                  onChange={(e) => setMode(e.target.value)}
+                  className="w-full rounded-lg border border-gray-300 px-3 py-2"
+                >
+                  <option value="standard">Standard</option>
+                  <option value="school">School</option>
+                  <option value="report">Report</option>
+                  <option value="thesis">Thesis</option>
+                  <option value="research">Research</option>
+                  <option value="proposal">Proposal</option>
+                </select>
+              </div>
+            </div>
+
+            <button
+              onClick={handleHumanize}
+              disabled={loading}
+              className="mt-4 rounded-xl bg-black px-5 py-3 text-white transition hover:opacity-90 disabled:opacity-50"
+            >
+              {loading ? "Processing..." : "Humanize"}
+            </button>
+
+            {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
+          </div>
+
+          <div className="rounded-2xl border border-gray-200 p-5 shadow-sm">
+            <label className="mb-2 block text-sm font-medium text-gray-700">
+              Output
+            </label>
+
+            <div className="min-h-[250px] rounded-xl border border-gray-300 bg-gray-50 p-4 text-gray-800 whitespace-pre-wrap">
+              {outputText || "Your processed text will appear here..."}
+            </div>
+          </div>
         </div>
-      </main>
-    </div>
+      </div>
+    </main>
   );
 }
