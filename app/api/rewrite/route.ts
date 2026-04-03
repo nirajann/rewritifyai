@@ -13,7 +13,7 @@ export async function POST(req: Request) {
     }
 
     const result = await rewriteEngine({
-      tool: "humanize",
+      tool: "rewrite",
       ...validated.data,
     });
 

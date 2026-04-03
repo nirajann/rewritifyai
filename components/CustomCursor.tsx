@@ -1,48 +1,44 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useState } from "react";
 
 export default function CustomCursor() {
-  const cursorRef = useRef<HTMLDivElement | null>(null);
+  const [position, setPosition] = useState({ x: -100, y: -100 });
+  const [enabled, setEnabled] = useState(false);
 
   useEffect(() => {
-    const cursor = cursorRef.current;
-    if (!cursor) return;
+    const mediaQuery = window.matchMedia("(pointer: fine)");
 
-    const moveCursor = (e: MouseEvent) => {
-      cursor.style.left = `${e.clientX}px`;
-      cursor.style.top = `${e.clientY}px`;
-
-      const target = e.target as HTMLElement | null;
-      const isInteractive = !!target?.closest(
-        "button, a, input, textarea, select, label, [data-cursor='pointer']"
-      );
-
-      if (isInteractive) {
-        cursor.classList.add("cursor-active");
-      } else {
-        cursor.classList.remove("cursor-active");
-      }
+    const updateMode = () => {
+      setEnabled(mediaQuery.matches);
     };
 
-    const handleMouseDown = () => {
-      cursor.classList.add("cursor-click");
+    updateMode();
+    mediaQuery.addEventListener("change", updateMode);
+
+    const handleMove = (e: MouseEvent) => {
+      setPosition({
+        x: e.clientX,
+        y: e.clientY,
+      });
     };
 
-    const handleMouseUp = () => {
-      cursor.classList.remove("cursor-click");
-    };
-
-    window.addEventListener("mousemove", moveCursor);
-    window.addEventListener("mousedown", handleMouseDown);
-    window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("mousemove", handleMove, { passive: true });
 
     return () => {
-      window.removeEventListener("mousemove", moveCursor);
-      window.removeEventListener("mousedown", handleMouseDown);
-      window.removeEventListener("mouseup", handleMouseUp);
+      mediaQuery.removeEventListener("change", updateMode);
+      window.removeEventListener("mousemove", handleMove);
     };
   }, []);
 
-  return <div ref={cursorRef} className="custom-cursor hidden md:block" />;
+  if (!enabled) return null;
+
+  return (
+    <div
+      className="pointer-events-none fixed left-0 top-0 z-[9999] h-4 w-4 rounded-full border border-emerald-500 bg-emerald-400/20 shadow-[0_0_16px_rgba(16,185,129,0.35)]"
+      style={{
+        transform: `translate(${position.x - 8}px, ${position.y - 8}px)`,
+      }}
+    />
+  );
 }

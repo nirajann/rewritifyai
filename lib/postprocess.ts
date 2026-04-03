@@ -1,3 +1,5 @@
+import type { RewriteTool } from "@/types/rewrite";
+
 export function postprocessText(output: string) {
   let text = output || "";
 
@@ -21,17 +23,7 @@ export function postprocessText(output: string) {
   return text.trim();
 }
 
-export function buildNotes(
-  tool:
-    | "humanize"
-    | "rewrite"
-    | "paraphrase"
-    | "improve"
-    | "expand"
-    | "shorten"
-    | "grammar",
-  mode: string
-) {
+export function buildNotes(tool: RewriteTool, mode: string) {
   if (tool === "humanize") {
     return [
       "Reduced robotic phrasing",
@@ -87,17 +79,7 @@ export function buildNotes(
   ];
 }
 
-export function estimateHumanScore(
-  tool:
-    | "humanize"
-    | "rewrite"
-    | "paraphrase"
-    | "improve"
-    | "expand"
-    | "shorten"
-    | "grammar",
-  outputText: string
-) {
+export function estimateHumanScore(tool: RewriteTool, outputText: string) {
   const words = outputText.trim() ? outputText.trim().split(/\s+/).length : 0;
 
   if (!words) return 0;

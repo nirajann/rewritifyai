@@ -1,18 +1,13 @@
 import OpenAI from "openai";
-import { humanizeText, paraphraseText, improveText } from "@/lib/textTools";
+
+import type { RewriteTool } from "@/types/rewrite";
+import { humanizeText, paraphraseText } from "@/lib/textTools";
 
 const apiKey = process.env.OPENAI_API_KEY;
 const openai = apiKey ? new OpenAI({ apiKey }) : null;
 
-type RewriteParams = {
-  tool:
-    | "humanize"
-    | "rewrite"
-    | "paraphrase"
-    | "improve"
-    | "expand"
-    | "shorten"
-    | "grammar";
+type ProcessTextParams = {
+  tool: RewriteTool;
   inputText: string;
   tone?: string;
   mode?: string;
@@ -21,21 +16,47 @@ type RewriteParams = {
   userInstruction?: string;
 };
 
+function rewriteText(inputText: string) {
+  return humanizeText(inputText, "natural", "standard", "medium");
+}
+
+function improveText(inputText: string) {
+  return humanizeText(inputText, "natural", "standard", "light");
+}
+
+function expandText(inputText: string) {
+  return (
+    humanizeText(inputText, "natural", "standard", "medium") +
+    " This version adds a little more explanation and detail."
+  );
+}
+
+function shortenText(inputText: string) {
+  const parts = inputText.split(/(?<=[.!?])\s+/);
+  return parts.slice(0, Math.max(1, Math.ceil(parts.length * 0.7))).join(" ");
+}
+
+function grammarFixText(inputText: string) {
+  return inputText
+    .replace(/\bi\b/g, "I")
+    .replace(/\bdont\b/gi, "don't")
+    .replace(/\bcant\b/gi, "can't")
+    .replace(/\bwont\b/gi, "won't");
+}
+
 function runMock(
-  tool: RewriteParams["tool"],
+  tool: RewriteTool,
   inputText: string,
-  mode = "standard"
+  tone = "natural",
+  mode = "standard",
 ) {
-  if (tool === "humanize") return humanizeText(inputText);
-  if (tool === "rewrite") return `Rewritten: ${inputText}`;
-  if (tool === "paraphrase") return paraphraseText(inputText, mode);
+  if (tool === "humanize") return humanizeText(inputText, tone, mode, "medium");
+  if (tool === "rewrite") return rewriteText(inputText);
+  if (tool === "paraphrase") return paraphraseText(inputText, tone, mode, "medium");
   if (tool === "improve") return improveText(inputText);
-  if (tool === "expand") return `${inputText} This adds a bit more explanation and detail to make the writing feel fuller.`;
-  if (tool === "shorten") {
-    const words = inputText.trim().split(/\s+/);
-    return words.slice(0, Math.max(6, Math.floor(words.length * 0.6))).join(" ");
-  }
-  return improveText(inputText);
+  if (tool === "expand") return expandText(inputText);
+  if (tool === "shorten") return shortenText(inputText);
+  return grammarFixText(inputText);
 }
 
 export async function processTextWithAI({
@@ -46,9 +67,9 @@ export async function processTextWithAI({
   wordCount,
   systemPrompt,
   userInstruction,
-}: RewriteParams) {
+}: ProcessTextParams) {
   if (!openai) {
-    return runMock(tool, inputText, mode);
+    return runMock(tool, inputText, tone, mode);
   }
 
   const fallbackInstruction =
@@ -94,11 +115,11 @@ export async function processTextWithAI({
     const outputText = response.output_text?.trim();
 
     if (!outputText) {
-      return runMock(tool, inputText, mode);
+      return runMock(tool, inputText, tone, mode);
     }
 
     return outputText;
   } catch {
-    return runMock(tool, inputText, mode);
+    return runMock(tool, inputText, tone, mode);
   }
 }

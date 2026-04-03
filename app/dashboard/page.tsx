@@ -1,119 +1,138 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+
+type DocumentItem = {
+  id: string;
+  title: string;
+  input_text: string;
+  output_text: string;
+  tool: string;
+  tone: string;
+  mode: string;
+  word_count: number;
+  human_score: number;
+  created_at: string;
+  updated_at: string;
+};
+
+type StoredUser = {
+  id: string;
+  email: string;
+};
+
 export default function DashboardPage() {
+  const [documents, setDocuments] = useState<DocumentItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [user, setUser] = useState<StoredUser | null>(null);
+  const router = useRouter();
+
+  async function loadDocuments(userId: string) {
+    try {
+      setLoading(true);
+      setError("");
+
+      const res = await fetch(`/api/documents?userId=${userId}`);
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Failed to load documents");
+      }
+
+      setDocuments(data.documents || []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load documents");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    const rawUser = localStorage.getItem("rewritify_user");
+
+    if (!rawUser) {
+      router.push("/auth");
+      return;
+    }
+
+    try {
+      const parsedUser = JSON.parse(rawUser);
+      setUser(parsedUser);
+      loadDocuments(parsedUser.id);
+    } catch {
+      localStorage.removeItem("rewritify_user");
+      router.push("/auth");
+    }
+  }, [router]);
+
   return (
-    <main className="min-h-screen bg-[linear-gradient(to_bottom,_#f8fafc,_#eef2f7)] px-4 py-8 md:px-8 md:py-10">
-      <div className="mx-auto max-w-7xl">
+    <main className="min-h-screen bg-slate-50">
+      <div className="mx-auto max-w-6xl px-4 py-10 md:px-6">
         <div className="mb-8">
-          <div className="inline-flex rounded-full border border-amber-200 bg-amber-50 px-4 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-amber-700">
-            Progress Dashboard
-          </div>
-          <h1 className="mt-4 text-4xl font-bold tracking-tight text-slate-950 md:text-5xl">
-            Your writing progress
-          </h1>
-          <p className="mt-3 max-w-2xl text-lg text-slate-600">
-            Track streaks, XP, achievements, and your premium writing growth.
+          <h1 className="text-3xl font-bold text-slate-950">Dashboard</h1>
+          <p className="mt-2 text-slate-600">
+            View and reopen your saved documents.
           </p>
+          {user && (
+            <p className="mt-3 text-sm text-slate-400">{user.email}</p>
+          )}
         </div>
 
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Daily Streak
-            </p>
-            <p className="mt-3 text-3xl font-bold text-slate-950">7 days</p>
-            <p className="mt-2 text-sm text-slate-600">Consistency builds mastery.</p>
+        {loading ? (
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <p className="text-sm text-slate-500">Loading documents...</p>
           </div>
-
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              XP Earned
-            </p>
-            <p className="mt-3 text-3xl font-bold text-slate-950">1280</p>
-            <p className="mt-2 text-sm text-slate-600">Each rewrite pushes you forward.</p>
+        ) : error ? (
+          <div className="rounded-3xl border border-red-200 bg-red-50 p-6 text-sm text-red-700 shadow-sm">
+            {error}
           </div>
-
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Level
-            </p>
-            <p className="mt-3 text-2xl font-bold text-slate-950">Clear Communicator</p>
-            <p className="mt-2 text-sm text-slate-600">Your current premium rank.</p>
+        ) : documents.length === 0 ? (
+          <div className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <p className="text-sm text-slate-600">No saved documents yet.</p>
           </div>
+        ) : (
+          <div className="grid gap-4">
+            {documents.map((doc) => (
+              <Link
+                key={doc.id}
+                href={`/workspace?id=${doc.id}`}
+                className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-emerald-200 hover:bg-emerald-50"
+              >
+                <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                  <div className="flex-1">
+                    <h2 className="text-lg font-semibold text-slate-950">
+                      {doc.title || "Untitled Document"}
+                    </h2>
 
-          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Words Refined
-            </p>
-            <p className="mt-3 text-3xl font-bold text-slate-950">12480</p>
-            <p className="mt-2 text-sm text-slate-600">Total words improved so far.</p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      Tool: {doc.tool} · Tone: {doc.tone} · Mode: {doc.mode}
+                    </p>
+
+                    <p className="mt-3 line-clamp-2 text-sm text-slate-600">
+                      {doc.output_text || doc.input_text || "No preview available."}
+                    </p>
+
+                    <p className="mt-3 text-xs text-slate-400">
+                      Updated: {new Date(doc.updated_at).toLocaleString()}
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap gap-3 text-sm">
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-700">
+                      {doc.word_count} words
+                    </span>
+                    <span className="rounded-full bg-emerald-100 px-3 py-1 text-emerald-700">
+                      {doc.human_score}% human
+                    </span>
+                  </div>
+                </div>
+              </Link>
+            ))}
           </div>
-        </section>
-
-        <section className="mt-8 grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <div className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-2xl font-bold text-slate-950">Today’s Challenge</h2>
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-amber-700">
-                +50 XP
-              </span>
-            </div>
-
-            <p className="text-slate-600">
-              Complete 3 refinements today to maintain your streak and unlock bonus XP.
-            </p>
-
-            <div className="mt-5 h-3 w-full overflow-hidden rounded-full bg-slate-100">
-              <div className="h-full w-2/3 rounded-full bg-slate-950" />
-            </div>
-
-            <p className="mt-3 text-sm font-medium text-slate-700">Progress: 2 / 3 complete</p>
-          </div>
-
-          <div className="rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm">
-            <h2 className="text-2xl font-bold text-slate-950">Weekly Insights</h2>
-
-            <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Human Score Avg
-                </p>
-                <p className="mt-2 text-2xl font-bold text-slate-950">89%</p>
-              </div>
-
-              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-                <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                  Clarity Gain
-                </p>
-                <p className="mt-2 text-2xl font-bold text-emerald-600">+14%</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="mt-8 rounded-[32px] border border-slate-200 bg-white p-6 shadow-sm">
-          <h2 className="text-2xl font-bold text-slate-950">Achievements</h2>
-
-          <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-sm font-semibold text-slate-950">First Refinement</p>
-              <p className="mt-1 text-sm text-slate-600">Completed your first rewrite session.</p>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-sm font-semibold text-slate-950">7-Day Streak</p>
-              <p className="mt-1 text-sm text-slate-600">Stayed consistent for a full week.</p>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-sm font-semibold text-slate-950">Clarity Champion</p>
-              <p className="mt-1 text-sm text-slate-600">Boosted readability across documents.</p>
-            </div>
-
-            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-sm font-semibold text-slate-950">Academic Mode Master</p>
-              <p className="mt-1 text-sm text-slate-600">Used advanced writing modes effectively.</p>
-            </div>
-          </div>
-        </section>
+        )}
       </div>
     </main>
   );

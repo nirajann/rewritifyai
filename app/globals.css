@@ -1,4 +1,21 @@
 @import "tailwindcss";
+html,
+body {
+  cursor: auto;
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  cursor: pointer;
+}
+
+input,
+textarea {
+  cursor: text;
+}
 
 :root {
   --background: #ffffff;

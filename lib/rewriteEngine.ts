@@ -1,28 +1,34 @@
-import { processTextWithAI } from "@/lib/aiClient";
-import { preprocessText } from "@/lib/preprocess";
+import { RewriteRequest } from "@/lib/validators/rewrite";
 import {
-  buildNotes,
+  buildProcessingNotes,
+  countWords,
   estimateHumanScore,
-  postprocessText,
-} from "@/lib/postprocess";
+  humanizeText,
+  paraphraseText,
+  prepareHumanizeInput,
+} from "@/lib/textTools";
 import {
-  buildSystemPrompt,
-  buildUserInstruction,
-  ToolType,
-} from "@/lib/promptBuilder";
+  getDocumentVersions,
+  logUsage,
+  saveDocument,
+  saveDocumentVersion,
+} from "@/lib/documentService";
 
-export type RewriteTool = ToolType;
+export type RewriteTool =
+  | "humanize"
+  | "rewrite"
+  | "paraphrase"
+  | "improve"
+  | "expand"
+  | "shorten"
+  | "grammar";
 
-type RewriteParams = {
+type RewriteEngineParams = RewriteRequest & {
   tool: RewriteTool;
-  inputText: string;
-  tone?: string;
-  mode?: string;
-  wordCount?: number;
 };
 
-export type RewriteResult = {
-  success: boolean;
+type RewriteSuccessResponse = {
+  success: true;
   tool: RewriteTool;
   outputText: string;
   tone: string;
@@ -30,7 +36,7 @@ export type RewriteResult = {
   wordCount: number;
   humanScore: number;
   notes: string[];
-  message?: string;
+  documentId?: string | null;
 };
 
 export async function rewriteEngine({
@@ -39,39 +45,104 @@ export async function rewriteEngine({
   tone = "natural",
   mode = "standard",
   wordCount,
-}: RewriteParams): Promise<RewriteResult> {
-  const prep = preprocessText(inputText);
+  title = "Untitled Document",
+  documentId,
+  userId,
+  strength = "medium",
+}: RewriteEngineParams): Promise<RewriteSuccessResponse> {
+  let sourceInput = inputText;
+  let outputText = inputText;
 
-  if (!prep.cleanedText) {
-    throw new Error("inputText is required");
+switch (tool) {
+  case "humanize": {
+    const prepared = prepareHumanizeInput(inputText);
+    sourceInput = prepared.cleaned;
+    outputText = humanizeText(prepared.cleaned, tone, mode, strength);
+    break;
   }
 
-  if (prep.tooShort) {
-    throw new Error("Please enter a bit more text");
+  case "paraphrase": {
+    outputText = paraphraseText(inputText, tone, mode, strength);
+    break;
   }
 
-  const systemPrompt = buildSystemPrompt();
-  const userInstruction = buildUserInstruction({
+  case "rewrite": {
+    outputText = humanizeText(inputText, tone, mode, strength);
+    break;
+  }
+
+  case "improve": {
+    outputText = humanizeText(inputText, tone, mode, strength);
+    break;
+  }
+
+  case "expand": {
+    outputText =
+      humanizeText(inputText, tone, mode, strength) +
+      " This version adds a little more detail and clarity.";
+    break;
+  }
+
+  case "shorten": {
+    const parts = inputText.split(/(?<=[.!?])\s+/);
+    outputText = parts
+      .slice(0, Math.max(1, Math.ceil(parts.length * 0.7)))
+      .join(" ");
+    break;
+  }
+
+  case "grammar": {
+    outputText = inputText
+      .replace(/\bi\b/g, "I")
+      .replace(/\bdont\b/gi, "don't")
+      .replace(/\bcant\b/gi, "can't")
+      .replace(/\bwont\b/gi, "won't");
+    break;
+  }
+}
+  
+
+  const finalWordCount = countWords(outputText);
+  const humanScore = estimateHumanScore(sourceInput, outputText, tool, strength);
+  const notes = buildProcessingNotes(tool, tone, mode, strength);
+
+  const savedDoc = await saveDocument({
+    id: documentId || undefined,
+    userId: userId || null,
+    title,
+    inputText: sourceInput,
+    outputText,
     tool,
     tone,
     mode,
-    wordCount: wordCount || prep.wordCount,
+    wordCount: finalWordCount || wordCount || 0,
+    humanScore,
   });
 
-  const rawOutput = await processTextWithAI({
-    tool,
-    inputText: prep.cleanedText,
-    tone,
-    mode,
-    wordCount: wordCount || prep.wordCount,
-    systemPrompt,
-    userInstruction,
-  });
+  const finalDocumentId: string | undefined = savedDoc?.id;
 
-  const outputText = postprocessText(rawOutput);
-  const notes = buildNotes(tool, mode);
-  const finalWordCount = outputText ? outputText.split(/\s+/).length : 0;
-  const humanScore = estimateHumanScore(tool, outputText);
+  if (finalDocumentId) {
+    const existingVersions = await getDocumentVersions(finalDocumentId);
+    const nextVersionNumber = (existingVersions?.length || 0) + 1;
+
+    await saveDocumentVersion({
+      documentId: finalDocumentId,
+      versionNumber: nextVersionNumber,
+      inputText: sourceInput,
+      outputText,
+      tool,
+      tone,
+      mode,
+      wordCount: finalWordCount || wordCount || 0,
+      humanScore,
+    });
+
+    await logUsage({
+      userId: userId || null,
+      tool,
+      wordCount: finalWordCount || wordCount || 0,
+    });
+  }
 
   return {
     success: true,
@@ -82,5 +153,6 @@ export async function rewriteEngine({
     wordCount: finalWordCount,
     humanScore,
     notes,
+    documentId: finalDocumentId,
   };
 }

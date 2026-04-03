@@ -1,98 +1,1104 @@
-export function humanizeText(input: string) {
-  let output = input.trim();
+import { PHRASE_REPLACEMENTS, WORD_REPLACEMENTS } from "@/lib/replacementLibrary";
+import { STARTER_CLEANUP_PATTERNS } from "@/lib/starterCleanupLibrary";
+export type Strength = "light" | "medium" | "strong";
+export type RewriteTool =
+  | "humanize"
+  | "rewrite"
+  | "paraphrase"
+  | "improve"
+  | "expand"
+  | "shorten"
+  | "grammar";
 
-  const replacements: Record<string, string> = {
-    "utilize": "use",
-    "individuals": "people",
-    "purchase": "buy",
-    "assist": "help",
-    "therefore": "so",
-    "however": "but",
-    "moreover": "also",
-    "children": "kids",
-    "dont": "don't",
-    "cant": "can't",
-    "wont": "won't",
-    "is not": "isn't",
-    "do not": "don't",
-    "cannot": "can't",
-    "in order to": "to",
-    "generate": "create",
-    "quickly": "fast"
-  };
+type PreparedInput = {
+  original: string;
+  cleaned: string;
+};
 
-  for (const [from, to] of Object.entries(replacements)) {
-    const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const regex = new RegExp(`\\b${escaped}\\b`, "gi");
-    output = output.replace(regex, to);
+type ProtectedToken = {
+  key: string;
+  value: string;
+};
+
+const AI_PHRASES: RegExp[] = [
+  /\bin conclusion\b/gi,
+  /\bto conclude\b/gi,
+  /\bmoreover\b/gi,
+  /\bfurthermore\b/gi,
+  /\badditionally\b/gi,
+  /\bit is important to note that\b/gi,
+  /\bit should be noted that\b/gi,
+  /\bin today's world\b/gi,
+  /\bin the modern world\b/gi,
+  /\bwithout a doubt\b/gi,
+  /\bplays a vital role\b/gi,
+  /\bplays an important role\b/gi,
+  /\ba wide range of\b/gi,
+  /\bdelves into\b/gi,
+  /\bmore specifically\b/gi,
+  /\bat the same time\b/gi,
+  /\bin many cases\b/gi,
+  /\bit can be said that\b/gi,
+  /\bthis means that\b/gi,
+  /\boverall\b/gi,
+  /\bnotably\b/gi,
+  /\bin essence\b/gi,
+  /\bat its core\b/gi,
+  /\bneedless to say\b/gi,
+];
+
+const FILLERS: RegExp[] = [
+  /\bvery\b/gi,
+  /\breally\b/gi,
+  /\bbasically\b/gi,
+  /\bactually\b/gi,
+  /\bquite\b/gi,
+  /\bsomewhat\b/gi,
+  /\bkind of\b/gi,
+  /\bsort of\b/gi,
+  /\bin order to\b/gi,
+];
+
+
+
+const DEPENDENT_MARKERS = [
+  "although",
+  "because",
+  "while",
+  "when",
+  "since",
+  "even though",
+  "after",
+  "before",
+  "if",
+];
+
+function normalizeWhitespace(text: string): string {
+  return text
+    .replace(/\r\n/g, "\n")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/\s+([,.!?;:])/g, "$1")
+    .trim();
+}
+
+function cleanArtifacts(text: string): string {
+  return normalizeWhitespace(
+    text
+      .replace(/,\s*,/g, ", ")
+      .replace(/\.\s*\./g, ".")
+      .replace(/\s+\./g, ".")
+      .replace(/\s+,/g, ",")
+      .replace(/\s{2,}/g, " ")
+  );
+}
+
+function capitalize(text: string): string {
+  if (!text) return text;
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function lowerFirst(text: string): string {
+  if (!text) return text;
+  return text.charAt(0).toLowerCase() + text.slice(1);
+}
+
+function splitSentences(text: string): string[] {
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function countWords(text: string): number {
+  if (!text.trim()) return 0;
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
+
+function tokenize(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9\s']/g, " ")
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function unique<T>(items: T[]): T[] {
+  return [...new Set(items)];
+}
+
+function protectMeaningTokens(text: string): { text: string; protectedTokens: ProtectedToken[] } {
+  const protectedTokens: ProtectedToken[] = [];
+  let counter = 0;
+
+  const patterns = [
+    /"[^"]+"/g,
+    /'[^']+'/g,
+    /\([^)]*\)/g,
+    /\b\d+(?:[.,]\d+)?%?\b/g,
+    /\b(?:Mount|Mt\.|Mr\.|Mrs\.|Ms\.|Dr\.|Prof\.)\s+[A-Z][a-zA-Z-]+\b/g,
+    /\b[A-Z][a-z]+(?:\s+[A-Z][a-zA-Z-]+)+\b/g,
+  ];
+
+  let out = text;
+
+  for (const pattern of patterns) {
+    out = out.replace(pattern, (match) => {
+      const key = `__LOCK_${counter++}__`;
+      protectedTokens.push({ key, value: match });
+      return key;
+    });
   }
 
-  output = output.replace(
-    /many people use it to create content fast, but the writing often sounds robotic and unnatural/gi,
-    "a lot of people use it to create content quickly, but the result can still sound robotic and unnatural"
+  return { text: out, protectedTokens };
+}
+
+function restoreMeaningTokens(text: string, protectedTokens: ProtectedToken[]): string {
+  let out = text;
+  for (const token of protectedTokens) {
+    out = out.replaceAll(token.key, token.value);
+  }
+  return out;
+}
+
+function stripAiPhrases(text: string): string {
+  let out = text;
+
+  for (const pattern of AI_PHRASES) {
+    out = out.replace(pattern, "");
+  }
+
+  for (const pattern of FILLERS) {
+    out = out.replace(pattern, "");
+  }
+
+  return cleanArtifacts(out);
+}
+
+/**
+ * Applies phrase and word replacements from the replacement library.
+ *
+ * Important:
+ * - Do NOT use pattern.test(...) with global regexes from the shared library
+ * - Global regexes keep internal state and can behave inconsistently
+ * - Instead, always run replace directly and compare before/after
+ */
+function applyWordReplacements(text: string, strength: Strength): string {
+  let out = text;
+
+  const phraseLimit =
+    strength === "light" ? 4 :
+    strength === "medium" ? 10 :
+    18;
+
+  const wordLimit =
+    strength === "light" ? 3 :
+    strength === "medium" ? 6 :
+    8;
+
+  let phraseApplied = 0;
+  for (const [pattern, replacement] of PHRASE_REPLACEMENTS) {
+    if (phraseApplied >= phraseLimit) break;
+
+    const next = out.replace(pattern, replacement);
+    if (next !== out) {
+      out = next;
+      phraseApplied++;
+    }
+  }
+
+  let wordApplied = 0;
+  for (const [pattern, replacement] of WORD_REPLACEMENTS) {
+    if (wordApplied >= wordLimit) break;
+
+    const next = out.replace(pattern, replacement);
+    if (next !== out) {
+      out = next;
+      wordApplied++;
+    }
+  }
+
+  return cleanArtifacts(out);
+}
+
+function rotateClause(sentence: string): string {
+  const parts = sentence.split(/,\s+/);
+  if (parts.length < 2) return sentence;
+
+  const [first, ...rest] = parts;
+  if (first.split(/\s+/).length < 4) return sentence;
+  if (rest.join(", ").split(/\s+/).length < 4) return sentence;
+
+  return `${rest.join(", ")}, ${lowerFirst(first)}`;
+}
+
+function breakLongSentence(sentence: string): string {
+  const words = sentence.split(/\s+/);
+  if (words.length < 20) return sentence;
+
+  const commaParts = sentence.split(/,\s+/);
+  if (commaParts.length >= 2) {
+    const half = Math.ceil(commaParts.length / 2);
+    const first = commaParts.slice(0, half).join(", ").replace(/[,.!?;:]+$/, "");
+    const second = commaParts.slice(half).join(", ").trim();
+    if (first && second) {
+      return `${first}. ${capitalize(second)}`;
+    }
+  }
+
+  const midpoint = Math.floor(words.length / 2);
+  const firstHalf = words.slice(0, midpoint).join(" ").replace(/[,.!?;:]+$/, "");
+  const secondHalf = words.slice(midpoint).join(" ").trim();
+
+  if (!firstHalf || !secondHalf) return sentence;
+  return `${firstHalf}. ${capitalize(secondHalf)}`;
+}
+
+function combineShortSentences(sentences: string[]): string[] {
+  const result: string[] = [];
+
+  for (let i = 0; i < sentences.length; i++) {
+    const current = sentences[i];
+    const next = sentences[i + 1];
+
+    if (next && countWords(current) <= 7 && countWords(next) <= 11) {
+      const merged =
+        current.replace(/[.!?]+$/, "") +
+        ", " +
+        lowerFirst(next).replace(/[.!?]+$/, "") +
+        ".";
+      result.push(cleanArtifacts(merged));
+      i++;
+    } else {
+      result.push(current);
+    }
+  }
+
+  return result;
+}
+/**
+ * Varies sentence openings without forcing awkward starters.
+ *
+ * Why this exists:
+ * - Reduces repetitive sentence openings
+ * - Avoids weak or robotic openers like "Which", "Although", "Because"
+ * - Keeps the paragraph sounding natural instead of mechanically varied
+ *
+ * Maintenance notes:
+ * - Prefer keeping a normal sentence over forcing an unnatural opener
+ * - Skip changes for short sentences
+ * - Only rewrite the opener if the new opener is clearly better
+ *
+ * Depends on:
+ * - cleanArtifacts(text)
+ * - capitalize(text)
+ * - rotateClause(sentence)
+ */
+function diversifyOpeners(sentences: string[]): string[] {
+  const used = new Set<string>();
+
+  const blockedOpeners = new Set([
+    "which",
+    "because",
+    "although",
+    "while",
+    "if",
+    "and",
+    "but",
+    "so",
+    "especially",
+  ]);
+
+  return sentences.map((sentence, index) => {
+    const cleaned = cleanArtifacts(sentence);
+    const words = cleaned.split(/\s+/);
+
+    if (words.length < 6) {
+      return cleaned;
+    }
+
+    const opener = words[0].toLowerCase().replace(/[^\w']/g, "");
+    const openerPair = words.slice(0, 2).join(" ").toLowerCase();
+
+    if (!blockedOpeners.has(opener) && !used.has(openerPair)) {
+      used.add(openerPair);
+      return cleaned;
+    }
+
+    // Try a safer clause rotation only if the sentence is long enough
+    if (index % 2 === 0 && words.length >= 10) {
+      const rotated = cleanArtifacts(capitalize(rotateClause(cleaned)));
+      const rotatedWords = rotated.split(/\s+/);
+      const rotatedOpener = rotatedWords[0]?.toLowerCase().replace(/[^\w']/g, "");
+      const rotatedPair = rotatedWords.slice(0, 2).join(" ").toLowerCase();
+
+      if (
+        rotatedWords.length >= 6 &&
+        rotatedOpener &&
+        !blockedOpeners.has(rotatedOpener) &&
+        !used.has(rotatedPair)
+      ) {
+        used.add(rotatedPair);
+        return rotated;
+      }
+    }
+
+    // Fallback: keep the sentence as-is, but mark its opener as used
+    used.add(openerPair);
+    return cleaned;
+  });
+}
+
+/**
+ * Applies stronger sentence-level reshaping while still avoiding fragments.
+ *
+ * Why this version is better:
+ * - pushes more structural change in the first pass
+ * - keeps grammar safer than aggressive clause splitting
+ * - makes the rewrite feel less like proofreading and more like real rewriting
+ *
+ * Depends on:
+ * - splitSentences(text)
+ * - recomposeSentenceAdvanced(sentence, strength, mode, tone)
+ * - breakLongSentence(sentence)
+ * - combineShortSentences(sentences)
+ * - diversifyOpeners(sentences)
+ * - cleanArtifacts(text)
+ * - capitalize(text)
+ * - avoidWeakOpening(sentence)
+ * - countWords(text)
+ */
+function varyRhythm(
+  text: string,
+  strength: Strength,
+  mode: string,
+  tone: string
+): string {
+  let sentences = splitSentences(text);
+
+  sentences = sentences.map((sentence, index) => {
+    let out = sentence;
+
+    // First reshape the sentence safely
+    out = recomposeSentenceAdvanced(out, strength, mode, tone);
+
+    // Strong mode: allow long sentences to split,
+    // but only if the result is still substantial
+    if (strength === "strong" && countWords(out) > 20) {
+      const broken = breakLongSentence(out);
+      const parts = splitSentences(broken);
+
+      const validSplit =
+        parts.length === 2 &&
+        countWords(parts[0]) >= 6 &&
+        countWords(parts[1]) >= 6;
+
+      if (validSplit) {
+        out = broken;
+      }
+    }
+
+    return cleanArtifacts(capitalize(avoidWeakOpening(out)));
+  });
+
+  // Medium and strong should push more visible rhythm change
+  if (strength === "medium" || strength === "strong") {
+    sentences = combineShortSentences(sentences);
+    sentences = diversifyOpeners(sentences);
+  }
+
+  return cleanArtifacts(sentences.join(" "));
+}
+
+
+function cleanupHumanStyle(text: string): string {
+  return cleanArtifacts(
+    text
+      .replace(/\bthe output\b/gi, "the writing")
+      .replace(/\bthis text\b/gi, "this piece")
+      .replace(/\bslightly robotic\b/gi, "unnatural")
+      .replace(/\brepetitive and less natural than human writing\b/gi, "repetitive")
+      .replace(/\bmay still\b/gi, "can still")
+  );
+}
+
+function rewriteByTone(text: string, tone: string): string {
+  let out = text;
+
+  if (tone === "formal") {
+    out = out
+      .replace(/\bcan't\b/gi, "cannot")
+      .replace(/\bdon't\b/gi, "do not")
+      .replace(/\bwon't\b/gi, "will not");
+  }
+
+  if (tone === "friendly") {
+    out = out
+      .replace(/\bhowever\b/gi, "but")
+      .replace(/\btherefore\b/gi, "so");
+  }
+
+  return cleanArtifacts(out);
+}
+
+function rewriteByMode(text: string, mode: string): string {
+  let out = text;
+
+  if (["school", "report", "thesis", "research", "proposal"].includes(mode)) {
+    out = out.replace(/\bkids\b/gi, "children");
+  }
+
+  return cleanArtifacts(out);
+}
+
+function lexicalSimilarity(a: string, b: string): number {
+  const setA = new Set(tokenize(a));
+  const setB = new Set(tokenize(b));
+  const intersection = [...setA].filter((word) => setB.has(word)).length;
+  const union = new Set([...setA, ...setB]).size;
+  return union === 0 ? 0 : intersection / union;
+}
+
+function openerSimilarity(input: string, output: string): number {
+  const a = splitSentences(input);
+  const b = splitSentences(output);
+  const len = Math.min(a.length, b.length);
+  if (len === 0) return 0;
+
+  let sameStarts = 0;
+  for (let i = 0; i < len; i++) {
+    const aStart = a[i].toLowerCase().split(/\s+/).slice(0, 4).join(" ");
+    const bStart = b[i].toLowerCase().split(/\s+/).slice(0, 4).join(" ");
+    if (aStart === bStart) sameStarts++;
+  }
+
+  return sameStarts / len;
+}
+
+function rhythmFlatness(text: string): number {
+  const lengths = splitSentences(text).map(countWords).filter(Boolean);
+  if (lengths.length <= 1) return 1;
+
+  const avg = lengths.reduce((a, b) => a + b, 0) / lengths.length;
+  if (avg === 0) return 1;
+
+  const variance =
+    lengths.reduce((sum, len) => sum + Math.pow(len - avg, 2), 0) / lengths.length;
+
+  const stdDev = Math.sqrt(variance);
+  const normalized = stdDev / avg;
+
+  return Math.max(0, 1 - normalized);
+}
+
+/**
+ * Measures how close the rewritten text still is to the original.
+ *
+ * Why this version is stronger:
+ * - Gives more penalty to long unchanged phrase blocks
+ * - Still checks repeated sentence openings
+ * - Still checks rhythm flatness
+ * - Reduces the chance of accepting a rewrite that is grammatically cleaner
+ *   but still too structurally similar
+ *
+ * Depends on:
+ * - lexicalSimilarity(input, output)
+ * - openerSimilarity(input, output)
+ * - rhythmFlatness(output)
+ * - longestSharedSpanWords(input, output)
+ */
+function overallSimilarity(input: string, output: string): number {
+  const lexical = lexicalSimilarity(input, output);
+  const opener = openerSimilarity(input, output);
+  const rhythmPenalty = rhythmFlatness(output) * 0.10;
+
+  // Stronger penalty for long copied word spans
+  const longestSpan = longestSharedSpanWords(input, output);
+  const sharedSpanPenalty =
+    Math.min(longestSpan / 10, 1) * 0.32;
+
+  // Extra penalty if copied spans are very long
+  const copiedBlockPenalty =
+    longestSpan >= 14 ? 0.12 :
+    longestSpan >= 10 ? 0.07 :
+    longestSpan >= 7 ? 0.03 :
+    0;
+
+  return (
+    lexical * 0.34 +
+    opener * 0.20 +
+    rhythmPenalty +
+    sharedSpanPenalty +
+    copiedBlockPenalty
+  );
+}
+
+/**
+ * Safer second-pass rewrite.
+ *
+ * Goal:
+ * - reduce similarity without creating broken grammar
+ * - avoid fragment sentences like "Supporting doctors."
+ * - keep full, natural sentences in report/thesis/workplace writing
+ *
+ * Strategy:
+ * - only rewrite sentences that are long enough
+ * - skip sentences that already became short or fragile
+ * - do not rotate whole paragraph order
+ * - do not force extra sentence splitting unless both parts are strong
+ */
+function aggressiveSecondPass(
+  text: string,
+  mode: string,
+  tone: string
+): string {
+  const sentences = splitSentences(text);
+
+  const rewritten = sentences.map((sentence) => {
+    const cleaned = cleanArtifacts(sentence);
+
+    // If already short, leave it alone.
+    if (countWords(cleaned) < 9) {
+      return cleaned;
+    }
+
+    // Use the advanced recomposer, but keep it sentence-safe.
+    let out = recomposeSentenceAdvanced(cleaned, "strong", mode, tone);
+
+    // Only break long sentences if they are really long.
+    if (countWords(out) > 22) {
+      const broken = breakLongSentence(out);
+
+      // Keep the broken version only if both resulting sentences are meaningful.
+      const parts = splitSentences(broken);
+      const validParts =
+        parts.length === 2 &&
+        countWords(parts[0]) >= 6 &&
+        countWords(parts[1]) >= 6;
+
+      if (validParts) {
+        out = broken;
+      }
+    }
+
+    return cleanArtifacts(capitalize(avoidWeakOpening(out)));
+  });
+
+  return cleanArtifacts(rewritten.join(" "));
+}
+
+/**
+ * Repairs accidental sentence-boundary issues created during recomposition.
+ * Keep this conservative so we do not over-split natural sentences.
+ */
+function repairSentenceBoundaries(text: string): string {
+  return cleanArtifacts(
+    text
+      .replace(/([a-z0-9\)])\s+([A-Z])/g, "$1. $2")
+      .replace(/\.\s*\./g, ".")
+      .replace(/\s{2,}/g, " ")
+  );
+}
+
+/**
+ * Main rewrite pipeline.
+ * Order matters:
+ * 1. protect meaning
+ * 2. remove AI-style phrasing
+ * 3. rewrite wording
+ * 4. reshape sentence rhythm
+ * 5. adjust by tone and mode
+ * 6. clean awkward starters
+ * 7. repair punctuation
+ * 8. rebalance paragraphs
+ * 9. restore protected details
+ */
+function rewriteCore(
+  inputText: string,
+  tone: string,
+  mode: string,
+  strength: Strength
+): string {
+  const protectedStage = protectMeaningTokens(inputText);
+  const originalParagraphCount = countParagraphs(inputText);
+
+  let draft = protectedStage.text;
+  draft = stripAiPhrases(draft);
+  draft = applyWordReplacements(draft, strength);
+  draft = varyRhythm(draft, strength, mode, tone);
+  draft = rewriteByTone(draft, tone);
+  draft = rewriteByMode(draft, mode);
+  draft = cleanupHumanStyle(draft);
+  draft = cleanupSentenceStarters(draft);
+  draft = repairSentenceBoundaries(draft);
+  draft = rebalanceParagraphs(draft, {
+    originalParagraphCount,
+    minParagraphs: Math.max(1, originalParagraphCount - 1),
+    maxParagraphs: originalParagraphCount + 1,
+    minSentencesPerParagraph: 2,
+    maxSentencesPerParagraph: 4,
+  });
+  draft = restoreMeaningTokens(draft, protectedStage.protectedTokens);
+
+  return cleanArtifacts(draft);
+}
+export function prepareHumanizeInput(inputText: string): PreparedInput {
+  const original = normalizeWhitespace(inputText);
+  const cleaned = normalizeWhitespace(
+    original
+      .replace(/[“”]/g, '"')
+      .replace(/[‘’]/g, "'")
   );
 
-  output = output.replace(
-    /artificial intelligence is a very useful technology/gi,
-    "Artificial intelligence is very useful"
+  return { original, cleaned };
+}
+
+export function humanizeText(
+  inputText: string,
+  tone: string = "natural",
+  mode: string = "standard",
+  strength: Strength = "medium"
+): string {
+  return rewriteWithSimilarityGuard(inputText, tone, mode, strength);
+}
+
+export function paraphraseText(
+  inputText: string,
+  tone: string = "natural",
+  mode: string = "standard",
+  strength: Strength = "medium"
+): string {
+  const effectiveStrength = strength === "light" ? "medium" : strength;
+  return rewriteWithSimilarityGuard(inputText, tone, mode, effectiveStrength);
+}
+
+export function estimateHumanScore(
+  inputText: string,
+  outputText: string,
+  tool: RewriteTool,
+  strength: Strength = "medium"
+): number {
+  const similarity = overallSimilarity(inputText, outputText);
+  const rhythm = rhythmFlatness(outputText);
+
+  let base = 88;
+  if (tool === "humanize") base = 90;
+  if (tool === "paraphrase") base = 87;
+  if (tool === "rewrite") base = 86;
+  if (tool === "improve") base = 85;
+  if (tool === "grammar") base = 83;
+  if (tool === "expand") base = 84;
+  if (tool === "shorten") base = 84;
+
+  const strengthBoost =
+    strength === "light" ? -2 :
+    strength === "medium" ? 0 :
+    3;
+
+  const similarityPenalty = Math.round(similarity * 20);
+  const rhythmPenalty = Math.round(rhythm * 6);
+
+  const score = base + strengthBoost - similarityPenalty - rhythmPenalty;
+  return Math.max(55, Math.min(98, score));
+}
+export function buildProcessingNotes(
+  tool: RewriteTool,
+  tone: string,
+  mode: string,
+  strength: Strength = "medium"
+): string[] {
+  const notes = [
+    `Tool applied: ${tool}`,
+    `Tone set to ${tone}`,
+    `Mode set to ${mode}`,
+    `Rewrite strength: ${strength}`,
+    "Checked sentence-opening repetition.",
+    "Checked sentence-length rhythm.",
+    "Protected names, numbers, and quoted details where possible.",
+    "Checked clause recomposition when the first pass stayed too close.",
+  ];
+
+  if (tool === "humanize") {
+    notes.push("Removed stock AI phrasing and rebalanced sentence flow.");
+  }
+
+  if (strength === "strong") {
+    notes.push("Applied a stronger second pass when similarity stayed high.");
+  }
+
+  return unique(notes);
+}
+/**
+ * Splits a sentence into meaningful clauses for safer recomposition.
+ *
+ * Why this version is safer:
+ * - avoids over-splitting on words like "which" and "because"
+ * - reduces fragment-style outputs
+ * - keeps enough structure for rewriting without breaking grammar
+ *
+ * Depends on:
+ * - cleanArtifacts(text)
+ */
+function splitClauses(sentence: string): string[] {
+  return sentence
+    .split(/,\s+|\s+\bbut\b\s+|\s+\bwhile\b\s+|\s+\balthough\b\s+/i)
+    .map((part) => cleanArtifacts(part))
+    .filter(Boolean);
+}
+
+/**
+ * Recompose one sentence into a more human-sounding version
+ * without creating fragments or awkward connectors.
+ *
+ * Why this version is better:
+ * - pushes more real rewriting than simple proofreading
+ * - avoids weak standalone starts like "Which..." or "Because..."
+ * - keeps complete sentences for report, thesis, SOP, letter, and workplace writing
+ *
+ * Maintenance notes:
+ * - prefer a safe rewrite over an aggressive broken rewrite
+ * - do not let short clauses become standalone sentences
+ * - formal modes stay more controlled
+ *
+ * Depends on:
+ * - cleanArtifacts(text)
+ * - capitalize(text)
+ * - countWords(text)
+ * - splitClauses(sentence)
+ */
+function recomposeSentenceAdvanced(
+  sentence: string,
+  strength: Strength,
+  mode: string,
+  tone: string
+): string {
+  const trimmed = cleanArtifacts(sentence);
+  if (!trimmed) return trimmed;
+
+  const clauses = splitClauses(trimmed);
+  if (clauses.length < 2) {
+    return trimmed;
+  }
+
+  const formalModes = new Set([
+    "report",
+    "thesis",
+    "research",
+    "proposal",
+    "letter",
+    "workplace",
+    "school",
+  ]);
+
+  const blockedStarts = new Set([
+    "which",
+    "because",
+    "although",
+    "while",
+    "and",
+    "but",
+    "so",
+    "especially",
+  ]);
+
+  const isFormalMode = formalModes.has(mode);
+  const shortClauseExists = clauses.some((c) => countWords(c) < 4);
+
+  if (strength === "light") {
+    return trimmed;
+  }
+
+  const [first, ...rest] = clauses;
+  const joinedRest = rest.join(", ").trim();
+
+  if (!first || !joinedRest) {
+    return trimmed;
+  }
+
+  const firstStart = first.split(/\s+/)[0]?.toLowerCase() || "";
+  const restStart = joinedRest.split(/\s+/)[0]?.toLowerCase() || "";
+
+  // Avoid turning weak connectors into new sentence starts
+  if (blockedStarts.has(firstStart) || blockedStarts.has(restStart)) {
+    return trimmed;
+  }
+
+  // Avoid fragment-style splits
+  if (shortClauseExists) {
+    return trimmed;
+  }
+
+  if (isFormalMode) {
+    if (countWords(first) < 6 || countWords(joinedRest) < 6) {
+      return trimmed;
+    }
+
+    if (strength === "medium") {
+      return cleanArtifacts(
+        `${capitalize(joinedRest)}. ${capitalize(first)}.`
+      );
+    }
+
+    const longest = [...clauses].sort((a, b) => countWords(b) - countWords(a))[0];
+    const others = clauses.filter((c) => c !== longest).join(", ").trim();
+
+    if (!longest || !others || countWords(longest) < 7 || countWords(others) < 7) {
+      return trimmed;
+    }
+
+    const longestStart = longest.split(/\s+/)[0]?.toLowerCase() || "";
+    const othersStart = others.split(/\s+/)[0]?.toLowerCase() || "";
+
+    if (blockedStarts.has(longestStart) || blockedStarts.has(othersStart)) {
+      return trimmed;
+    }
+
+    return cleanArtifacts(
+      `${capitalize(longest)}. ${capitalize(others)}.`
+    );
+  }
+
+  if (strength === "medium") {
+    if (countWords(first) < 5 || countWords(joinedRest) < 5) {
+      return trimmed;
+    }
+
+    return cleanArtifacts(
+      `${capitalize(joinedRest)}. ${capitalize(first)}.`
+    );
+  }
+
+  const longest = [...clauses].sort((a, b) => countWords(b) - countWords(a))[0];
+  const others = clauses.filter((c) => c !== longest).join(", ").trim();
+
+  if (!longest || !others || countWords(longest) < 6 || countWords(others) < 6) {
+    return trimmed;
+  }
+
+  const longestStart = longest.split(/\s+/)[0]?.toLowerCase() || "";
+  const othersStart = others.split(/\s+/)[0]?.toLowerCase() || "";
+
+  if (blockedStarts.has(longestStart) || blockedStarts.has(othersStart)) {
+    return trimmed;
+  }
+
+  return cleanArtifacts(
+    `${capitalize(longest)}. ${capitalize(others)}.`
+  );
+}
+
+
+function longestSharedSpanWords(input: string, output: string): number {
+  const a = tokenize(input);
+  const b = tokenize(output);
+
+  let longest = 0;
+
+  for (let i = 0; i < a.length; i++) {
+    for (let j = 0; j < b.length; j++) {
+      let k = 0;
+      while (a[i + k] && b[j + k] && a[i + k] === b[j + k]) {
+        k++;
+      }
+      if (k > longest) longest = k;
+    }
+  }
+
+  return longest;
+}
+
+function avoidWeakOpening(sentence: string): string {
+  const weakOpeners = new Set([
+    "key",
+    "major",
+    "important",
+    "significant",
+    "overall",
+    "notably",
+  ]);
+
+  const words = sentence.trim().split(/\s+/);
+  if (words.length < 3) return sentence;
+
+  const first = words[0].toLowerCase().replace(/[^\w']/g, "");
+  if (!weakOpeners.has(first)) return sentence;
+
+  return cleanArtifacts(words.slice(1).join(" "));
+}
+/**
+ * Decides whether the first rewrite is different enough,
+ * or whether a stronger second pass is needed.
+ *
+ * Why this exists:
+ * - Prevents the system from stopping too early after only grammar cleanup
+ * - Pushes a stronger rewrite when the output still keeps large copied blocks
+ * - Rejects second-pass results if they become too short or awkward
+ *
+ * Depends on:
+ * - normalizeWhitespace(text)
+ * - rewriteCore(inputText, tone, mode, strength)
+ * - overallSimilarity(input, output)
+ * - aggressiveSecondPass(text, mode, tone)
+ * - countWords(text)
+ * - cleanArtifacts(text)
+ */
+function rewriteWithSimilarityGuard(
+  inputText: string,
+  tone: string,
+  mode: string,
+  strength: Strength
+): string {
+  const original = normalizeWhitespace(inputText);
+  const firstPass = rewriteCore(original, tone, mode, strength);
+
+  const firstSimilarity = overallSimilarity(original, firstPass);
+
+  const threshold =
+    strength === "light" ? 0.86 :
+    strength === "medium" ? 0.68 :
+    0.60;
+
+  if (firstSimilarity <= threshold) {
+    return cleanArtifacts(firstPass);
+  }
+
+  const secondPass = aggressiveSecondPass(firstPass, mode, tone);
+  const secondSimilarity = overallSimilarity(original, secondPass);
+
+  const firstWords = countWords(firstPass);
+  const secondWords = countWords(secondPass);
+
+  const secondLooksReasonable =
+    secondWords >= Math.max(6, Math.floor(firstWords * 0.78)) &&
+    secondWords <= Math.ceil(firstWords * 1.30);
+
+  if (secondLooksReasonable && secondSimilarity < firstSimilarity) {
+    return cleanArtifacts(secondPass);
+  }
+
+  return cleanArtifacts(firstPass);
+}
+
+/**
+ * Counts paragraphs in the original source text.
+ * Blank lines are treated as paragraph breaks.
+ */
+function countParagraphs(text: string): number {
+  const parts = text
+    .split(/\n\s*\n/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  return parts.length || 1;
+}
+
+/**
+ * Rebalances rewritten text into natural paragraph groups
+ * while preserving the original meaning and sentence order.
+ *
+ * Why this version is better:
+ * - uses the original paragraph count as guidance
+ * - keeps paragraph flow closer to human writing
+ * - changes grouping without changing content
+ *
+ * Safe behavior:
+ * - keeps sentence order exactly the same
+ * - does not invent or remove content
+ * - only changes paragraph boundaries
+ */
+function rebalanceParagraphs(
+  text: string,
+  options?: {
+    originalParagraphCount?: number;
+    minParagraphs?: number;
+    maxParagraphs?: number;
+    minSentencesPerParagraph?: number;
+    maxSentencesPerParagraph?: number;
+  }
+): string {
+  const cleaned = cleanArtifacts(text);
+  const sentences = splitSentences(cleaned);
+
+  if (sentences.length <= 2) {
+    return cleaned;
+  }
+
+  const originalParagraphCount = options?.originalParagraphCount ?? 1;
+  const minParagraphs =
+    options?.minParagraphs ?? Math.max(1, originalParagraphCount - 1);
+  const maxParagraphs =
+    options?.maxParagraphs ?? Math.max(minParagraphs, originalParagraphCount + 1);
+  const minSentencesPerParagraph = options?.minSentencesPerParagraph ?? 2;
+  const maxSentencesPerParagraph = options?.maxSentencesPerParagraph ?? 4;
+
+  let targetParagraphs = Math.ceil(sentences.length / 3);
+
+  targetParagraphs = Math.max(
+    minParagraphs,
+    Math.min(maxParagraphs, targetParagraphs)
   );
 
-  output = output.replace(/\s+/g, " ").trim();
+  const paragraphs: string[] = [];
+  let current: string[] = [];
 
-  if (output.length > 0) {
-    output = output.charAt(0).toUpperCase() + output.slice(1);
+  for (let i = 0; i < sentences.length; i++) {
+    current.push(sentences[i]);
+
+    const remainingSentences = sentences.length - (i + 1);
+    const remainingParagraphs = targetParagraphs - paragraphs.length - 1;
+
+    const canCloseParagraph =
+      current.length >= minSentencesPerParagraph &&
+      (
+        current.length >= maxSentencesPerParagraph ||
+        (
+          remainingParagraphs > 0 &&
+          remainingSentences >= remainingParagraphs * minSentencesPerParagraph
+        )
+      );
+
+    if (canCloseParagraph) {
+      paragraphs.push(current.join(" "));
+      current = [];
+    }
   }
 
-  if (!/[.!?]$/.test(output)) {
-    output += ".";
+  if (current.length) {
+    if (
+      paragraphs.length > 0 &&
+      current.length < minSentencesPerParagraph
+    ) {
+      paragraphs[paragraphs.length - 1] =
+        `${paragraphs[paragraphs.length - 1]} ${current.join(" ")}`;
+    } else {
+      paragraphs.push(current.join(" "));
+    }
   }
 
-  return output;
+  return paragraphs.join("\n\n");
 }
 
-export function paraphraseText(input: string, mode: string) {
-  const cleaned = input.trim();
+/**
+ * Cleans awkward sentence starters that often survive paraphrasing.
+ *
+ * Why this exists:
+ * - fixes weak rewrite leftovers like "Which improves..." or "Because of this..."
+ * - improves flow without changing meaning much
+ * - uses a separate library so patterns can grow safely later
+ *
+ * Depends on:
+ * - STARTER_CLEANUP_PATTERNS
+ * - cleanArtifacts(text)
+ */
+function cleanupSentenceStarters(text: string): string {
+  let out = text;
 
-  if (mode === "school") {
-    return `In simple terms, ${cleaned}`;
+  for (const [pattern, replacement] of STARTER_CLEANUP_PATTERNS) {
+    out = out.replace(pattern, replacement);
   }
 
-  if (mode === "report") {
-    return `This report explains that ${cleaned.charAt(0).toLowerCase()}${cleaned.slice(1)}`;
-  }
-
-  if (mode === "thesis") {
-    return `This study suggests that ${cleaned.charAt(0).toLowerCase()}${cleaned.slice(1)}`;
-  }
-
-  if (mode === "research") {
-    return `From a research perspective, ${cleaned.charAt(0).toLowerCase()}${cleaned.slice(1)}`;
-  }
-
-  if (mode === "proposal") {
-    return `It is proposed that ${cleaned.charAt(0).toLowerCase()}${cleaned.slice(1)}`;
-  }
-
-  return `In other words, ${cleaned}`;
+  return cleanArtifacts(out);
 }
 
-export function improveText(input: string) {
-  let output = input.trim();
 
-  output = output.replace(/\bi\b/g, "I");
-  output = output.replace(/\bdont\b/gi, "don't");
-  output = output.replace(/\bdoesnt\b/gi, "doesn't");
-  output = output.replace(/\bcant\b/gi, "can't");
-  output = output.replace(/\bwont\b/gi, "won't");
-  output = output.replace(/\bim\b/gi, "I'm");
-
-  if (output.length > 0) {
-    output = output.charAt(0).toUpperCase() + output.slice(1);
-  }
-
-  if (!/[.!?]$/.test(output)) {
-    output += ".";
-  }
-
-  return output;
-}
+export { countWords };

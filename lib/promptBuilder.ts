@@ -1,17 +1,11 @@
-export type ToolType =
-  | "humanize"
-  | "rewrite"
-  | "paraphrase"
-  | "improve"
-  | "expand"
-  | "shorten"
-  | "grammar";
+import type { RewriteTool } from "@/types/rewrite";
 
 type PromptArgs = {
-  tool: ToolType;
+  tool: RewriteTool;
   tone?: string;
   mode?: string;
   wordCount?: number;
+  strength?: "light" | "medium" | "strong";
 };
 
 export function buildSystemPrompt() {
@@ -28,12 +22,27 @@ Rules:
 `.trim();
 }
 
+function getStrengthInstruction(strength: "light" | "medium" | "strong" = "medium") {
+  if (strength === "light") {
+    return "Make light edits only. Preserve most of the original wording and structure.";
+  }
+
+  if (strength === "strong") {
+    return "Rewrite aggressively with noticeably improved flow, phrasing, and sentence structure while preserving the meaning.";
+  }
+
+  return "Make moderate improvements to wording, sentence flow, and clarity while preserving the meaning.";
+}
+
 export function buildUserInstruction({
   tool,
   tone = "natural",
   mode = "standard",
   wordCount,
+  strength = "medium",
 }: PromptArgs) {
+  const strengthInstruction = getStrengthInstruction(strength);
+
   let instruction = "";
 
   if (tool === "humanize") {
@@ -41,31 +50,38 @@ export function buildUserInstruction({
 Rewrite this text so it sounds clearly more human, natural, conversational, and less robotic.
 Do not simply copy the original text.
 Change wording and sentence flow where needed, but preserve the meaning.
+${strengthInstruction}
 Tone: ${tone}.
+Mode: ${mode}.
 `.trim();
   } else if (tool === "rewrite") {
     instruction = `
 Rewrite this text with fresher wording and better flow.
 Preserve the meaning but noticeably improve expression and sentence variety.
+${strengthInstruction}
 Tone: ${tone}.
 Mode: ${mode}.
 `.trim();
   } else if (tool === "paraphrase") {
     instruction = `
 Paraphrase this text clearly while preserving the meaning.
-Use mode: ${mode}.
+${strengthInstruction}
 Tone: ${tone}.
+Mode: ${mode}.
 `.trim();
   } else if (tool === "improve") {
     instruction = `
 Improve this text by fixing grammar, clarity, readability, and flow.
 Keep the original meaning.
+${strengthInstruction}
 Tone: ${tone}.
+Mode: ${mode}.
 `.trim();
   } else if (tool === "expand") {
     instruction = `
 Expand this text with more detail, clarity, and completeness.
 Preserve the meaning but make it more developed and informative.
+${strengthInstruction}
 Tone: ${tone}.
 Mode: ${mode}.
 `.trim();
@@ -80,7 +96,9 @@ Mode: ${mode}.
     instruction = `
 Correct grammar, punctuation, spelling, and sentence structure.
 Preserve the meaning and keep the text natural.
+${strengthInstruction}
 Tone: ${tone}.
+Mode: ${mode}.
 `.trim();
   }
 
