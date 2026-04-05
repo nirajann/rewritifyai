@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { jsonError } from "@/lib/apiResponse";
+import { humanizeText, humanizeTextRetry } from "@/lib/textTools";
 import { rewriteEngine } from "@/lib/rewriteEngine";
 import { validateRewriteRequest } from "@/lib/validators/rewrite";
 

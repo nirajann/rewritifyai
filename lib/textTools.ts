@@ -1,5 +1,6 @@
 import { PHRASE_REPLACEMENTS, WORD_REPLACEMENTS } from "@/lib/replacementLibrary";
 import { STARTER_CLEANUP_PATTERNS } from "@/lib/starterCleanupLibrary";
+import { ESSAY_PATTERN_REPLACEMENTS } from "@/lib/essayPatternLibrary";
 export type Strength = "light" | "medium" | "strong";
 export type RewriteTool =
   | "humanize"
@@ -183,18 +184,45 @@ function stripAiPhrases(text: string): string {
  * - Global regexes keep internal state and can behave inconsistently
  * - Instead, always run replace directly and compare before/after
  */
-function applyWordReplacements(text: string, strength: Strength): string {
+function applyWordReplacements(
+  text: string,
+  strength: Strength,
+  options?: {
+    phraseBoost?: number;
+    wordBoost?: number;
+  }
+): string {
   let out = text;
 
-  const phraseLimit =
+  const essayLimitBase =
+    strength === "light" ? 3 :
+    strength === "medium" ? 6 :
+    10;
+
+  const phraseLimitBase =
     strength === "light" ? 4 :
     strength === "medium" ? 10 :
     18;
 
-  const wordLimit =
+  const wordLimitBase =
     strength === "light" ? 3 :
     strength === "medium" ? 6 :
     8;
+
+  const essayLimit = Math.max(0, essayLimitBase + (options?.phraseBoost ?? 0));
+  const phraseLimit = Math.max(0, phraseLimitBase + (options?.phraseBoost ?? 0));
+  const wordLimit = Math.max(0, wordLimitBase + (options?.wordBoost ?? 0));
+
+  let essayApplied = 0;
+  for (const [pattern, replacement] of ESSAY_PATTERN_REPLACEMENTS) {
+    if (essayApplied >= essayLimit) break;
+
+    const next = out.replace(pattern, replacement);
+    if (next !== out) {
+      out = next;
+      essayApplied++;
+    }
+  }
 
   let phraseApplied = 0;
   for (const [pattern, replacement] of PHRASE_REPLACEMENTS) {
@@ -220,7 +248,6 @@ function applyWordReplacements(text: string, strength: Strength): string {
 
   return cleanArtifacts(out);
 }
-
 function rotateClause(sentence: string): string {
   const parts = sentence.split(/,\s+/);
   if (parts.length < 2) return sentence;
@@ -623,14 +650,9 @@ function rewriteCore(
   const originalParagraphCount = countParagraphs(inputText);
 
   let draft = protectedStage.text;
-  draft = stripAiPhrases(draft);
-  draft = applyWordReplacements(draft, strength);
-  draft = varyRhythm(draft, strength, mode, tone);
-  draft = rewriteByTone(draft, tone);
-  draft = rewriteByMode(draft, mode);
-  draft = cleanupHumanStyle(draft);
-  draft = cleanupSentenceStarters(draft);
-  draft = repairSentenceBoundaries(draft);
+
+  draft = rewriteParagraphAware(draft, tone, mode, strength);
+
   draft = rebalanceParagraphs(draft, {
     originalParagraphCount,
     minParagraphs: Math.max(1, originalParagraphCount - 1),
@@ -638,10 +660,13 @@ function rewriteCore(
     minSentencesPerParagraph: 2,
     maxSentencesPerParagraph: 4,
   });
+
+  draft = finalSentencePolish(draft);
   draft = restoreMeaningTokens(draft, protectedStage.protectedTokens);
 
   return cleanArtifacts(draft);
 }
+
 export function prepareHumanizeInput(inputText: string): PreparedInput {
   const original = normalizeWhitespace(inputText);
   const cleaned = normalizeWhitespace(
@@ -659,7 +684,16 @@ export function humanizeText(
   mode: string = "standard",
   strength: Strength = "medium"
 ): string {
-  return rewriteWithSimilarityGuard(inputText, tone, mode, strength);
+  const candidates = generateRewriteCandidates(
+    inputText,
+    tone,
+    mode,
+    strength
+  );
+
+  const best = pickBestRewriteCandidate(candidates);
+
+  return best.outputText;
 }
 
 export function paraphraseText(
@@ -1098,6 +1132,455 @@ function cleanupSentenceStarters(text: string): string {
   }
 
   return cleanArtifacts(out);
+}
+
+/**
+ * Rewrites text paragraph by paragraph while preserving the original
+ * meaning, idea order, and overall structure.
+ *
+ * Why this exists:
+ * - keeps paraphrase meaning close to the original
+ * - lets each paragraph be rewritten with local context
+ * - helps the whole text feel more natural, not just sentence by sentence
+ *
+ * Safe behavior:
+ * - preserves paragraph order
+ * - preserves sentence order inside each paragraph
+ * - does not invent new ideas
+ */
+function rewriteParagraphAware(
+  text: string,
+  tone: string,
+  mode: string,
+  strength: Strength
+): string {
+  const paragraphs = text
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  if (paragraphs.length <= 1) {
+    return text;
+  }
+
+  const rewrittenParagraphs = paragraphs.map((paragraph) => {
+    let out = paragraph;
+
+    out = stripAiPhrases(out);
+    out = applyWordReplacements(out, strength);
+    out = varyRhythm(out, strength, mode, tone);
+    out = rewriteByTone(out, tone);
+    out = rewriteByMode(out, mode);
+    out = cleanupHumanStyle(out);
+    out = cleanupSentenceStarters(out);
+    out = repairSentenceBoundaries(out);
+
+    return cleanArtifacts(out);
+  });
+
+  return rewrittenParagraphs.join("\n\n");
+}
+
+/**
+ * Final sentence cleanup after rewriting.
+ *
+ * Goal:
+ * - fix leftover broken joins
+ * - fix lowercase sentence starts
+ * - remove awkward split fragments
+ * - improve readability without changing meaning much
+ */
+function finalSentencePolish(text: string): string {
+  let out = cleanArtifacts(text);
+
+  out = out
+    .replace(/\bThis means a\.\s+/gi, "This means ")
+    .replace(/\bThis is possible because\.\s+/gi, "This is possible because ")
+    .replace(/\bMany large companies use\.\s+([A-Z])/g, "Many large companies use $1")
+    .replace(/\bA common use of\.\s+([A-Z])/g, "A common use of $1")
+    .replace(/\bCommonly known as the\.\s+/gi, "commonly known as the ")
+    .replace(/\bwhere developers create\b/g, "where developers create")
+    .replace(/\bwhere users can\b/g, "where users can")
+    .replace(/\bwhere people can\b/g, "where people can")
+    .replace(/\bThis field is key\.\s*/gi, "This field matters because ")
+    .replace(/\bSince it explains\b/gi, "because it explains")
+    .replace(
+      /\bIncluding education, healthcare, business, and counseling, psychology is used in many areas\b/gi,
+      "Psychology is used in many areas, including education, healthcare, business, and counseling"
+    )
+    .replace(/\bareas One of the main goals\b/gi, "areas. One of the main goals")
+    .replace(/\balso also\b/gi, "also")
+    .replace(/\bmost key\b/gi, "most important")
+    .replace(/\bThanks to its flexibility and wide range of uses\.\s*/gi, "Because of its flexibility and wide range of uses, ")
+    .replace(/([.!?]\s+)([a-z])/g, (_, a, b) => a + b.toUpperCase())
+    .replace(/\b([A-Z][a-z]+) because it teaches\b/g, "$1 teaches")
+    .replace(/\b([A-Z][a-z]+) is also used in\.\s+/g, "$1 is also used in ")
+    .replace(/\b([A-Z][a-z]+) became popular for\.\s+/g, "$1 became popular for ");
+
+  return cleanArtifacts(out);
+}
+
+/**
+ * Builds small rewrite profiles so the engine can generate
+ * more than one balanced candidate instead of relying on one pattern.
+ *
+ * Why this exists:
+ * - different texts respond better to slightly different rewrite settings
+ * - medium is usually best, but one balanced variation may beat another
+ * - strong should be used only as a fallback profile
+ *
+ * Safe behavior:
+ * - keeps profiles limited and predictable
+ * - avoids random unstable rewrites
+ */
+function getRewriteProfiles(strength: Strength): Array<{
+  id: "balanced_a" | "balanced_b" | "aggressive";
+  strength: Strength;
+  phraseBoost: number;
+  wordBoost: number;
+  paragraphBias: -1 | 0 | 1;
+}> {
+  if (strength === "light") {
+    return [
+      {
+        id: "balanced_a",
+        strength: "light",
+        phraseBoost: 0,
+        wordBoost: 0,
+        paragraphBias: 0,
+      },
+      {
+        id: "balanced_b",
+        strength: "medium",
+        phraseBoost: 1,
+        wordBoost: 0,
+        paragraphBias: 0,
+      },
+    ];
+  }
+
+  if (strength === "strong") {
+    return [
+      {
+        id: "balanced_a",
+        strength: "medium",
+        phraseBoost: 0,
+        wordBoost: 0,
+        paragraphBias: 0,
+      },
+      {
+        id: "balanced_b",
+        strength: "medium",
+        phraseBoost: 2,
+        wordBoost: 0,
+        paragraphBias: 1,
+      },
+      {
+        id: "aggressive",
+        strength: "strong",
+        phraseBoost: 2,
+        wordBoost: 1,
+        paragraphBias: 1,
+      },
+    ];
+  }
+
+  return [
+    {
+      id: "balanced_a",
+      strength: "medium",
+      phraseBoost: 0,
+      wordBoost: 0,
+      paragraphBias: 0,
+    },
+    {
+      id: "balanced_b",
+      strength: "medium",
+      phraseBoost: 2,
+      wordBoost: 0,
+      paragraphBias: 1,
+    },
+  ];
+}
+
+/**
+ * Scores one rewritten candidate.
+ *
+ * Goal:
+ * - prefer outputs that are less similar
+ * - reward variation and readability
+ * - penalize broken grammar / weird leftovers
+ *
+ * Higher total score = better candidate
+ *
+ * Depends on:
+ * - overallSimilarity(input, output)
+ * - splitSentences(text)
+ * - countWords(text)
+ */
+function scoreRewriteCandidate(
+  inputText: string,
+  outputText: string
+): {
+  total: number;
+  similarity: number;
+  readability: number;
+  variation: number;
+  penalties: number;
+} {
+  const similarity = overallSimilarity(inputText, outputText);
+
+  const sentences = splitSentences(outputText);
+  const sentenceLengths = sentences.map((s) => countWords(s)).filter(Boolean);
+
+  const avgLength =
+    sentenceLengths.length > 0
+      ? sentenceLengths.reduce((a, b) => a + b, 0) / sentenceLengths.length
+      : 0;
+
+  const shortFragments = sentences.filter((s) => countWords(s) < 4).length;
+
+  const awkwardStarts = sentences.filter((s) =>
+    /^(Which|Because|Although|And|But|So)\b/.test(s.trim())
+  ).length;
+
+  const repeatedStarts = (() => {
+    const starts = sentences.map((s) =>
+      s.trim().split(/\s+/).slice(0, 2).join(" ").toLowerCase()
+    );
+    const seen = new Set<string>();
+    let repeats = 0;
+
+    for (const start of starts) {
+      if (seen.has(start)) repeats++;
+      else seen.add(start);
+    }
+
+    return repeats;
+  })();
+
+  const readability =
+    100
+    - shortFragments * 12
+    - awkwardStarts * 10
+    - repeatedStarts * 6
+    - (avgLength > 28 ? 8 : 0)
+    - (avgLength < 7 ? 8 : 0);
+
+  const variation =
+    100
+    - Math.round(similarity * 100);
+
+  const penalties =
+    shortFragments * 10 +
+    awkwardStarts * 8 +
+    repeatedStarts * 5;
+
+  const total =
+    (variation * 0.45) +
+    (Math.max(0, readability) * 0.35) -
+    (penalties * 0.20);
+
+  return {
+    total,
+    similarity,
+    readability: Math.max(0, readability),
+    variation: Math.max(0, variation),
+    penalties,
+  };
+}
+
+/**
+ * Generates a small set of rewrite candidates and scores them.
+ *
+ * Why this exists:
+ * - lets the engine compare balanced variations instead of trusting one output
+ * - keeps strong mode as a fallback, not the default winner
+ * - makes "Try Again" easier later
+ *
+ * Depends on:
+ * - getRewriteProfiles(strength)
+ * - rewriteParagraphAware(text, tone, mode, strength)
+ * - rebalanceParagraphs(text, options)
+ * - finalSentencePolish(text)
+ * - cleanArtifacts(text)
+ * - scoreRewriteCandidate(input, output)
+ * - countParagraphs(text)
+ */
+function generateRewriteCandidates(
+  inputText: string,
+  tone: string,
+  mode: string,
+  strength: Strength
+): Array<{
+  id: "balanced_a" | "balanced_b" | "aggressive";
+  outputText: string;
+  score: ReturnType<typeof scoreRewriteCandidate>;
+}> {
+  const originalParagraphCount = countParagraphs(inputText);
+  const profiles = getRewriteProfiles(strength);
+
+  return profiles.map((profile) => {
+    let output = rewriteParagraphAware(
+      inputText,
+      tone,
+      mode,
+      profile.strength
+    );
+
+    output = rebalanceParagraphs(output, {
+      originalParagraphCount,
+      minParagraphs: Math.max(1, originalParagraphCount - 1),
+      maxParagraphs: originalParagraphCount + 1,
+      minSentencesPerParagraph: 2,
+      maxSentencesPerParagraph: 4,
+    });
+
+    output = finalSentencePolish(output);
+    output = cleanArtifacts(output);
+
+    const score = scoreRewriteCandidate(inputText, output);
+
+    return {
+      id: profile.id,
+      outputText: output,
+      score,
+    };
+  });
+}
+
+/**
+ * Picks the best rewrite candidate.
+ *
+ * Why this exists:
+ * - chooses the strongest result based on score
+ * - prefers balanced outputs over aggressive ones when scores are close
+ * - avoids unstable "strong wins just because it changed more" behavior
+ *
+ * Safe behavior:
+ * - if two results are close, prefer balanced
+ * - only prefer aggressive when it is clearly better
+ */
+function pickBestRewriteCandidate(
+  candidates: Array<{
+    id: "balanced_a" | "balanced_b" | "aggressive";
+    outputText: string;
+    score: ReturnType<typeof scoreRewriteCandidate>;
+  }>
+): {
+  id: "balanced_a" | "balanced_b" | "aggressive";
+  outputText: string;
+  score: ReturnType<typeof scoreRewriteCandidate>;
+} {
+  if (candidates.length === 1) {
+    return candidates[0];
+  }
+
+  const sorted = [...candidates].sort((a, b) => b.score.total - a.score.total);
+
+  const best = sorted[0];
+  const second = sorted[1];
+
+  const bestIsAggressive = best.id === "aggressive";
+  const secondIsBalanced = second && second.id !== "aggressive";
+
+  // If aggressive is only a little better, prefer balanced.
+  if (
+    bestIsAggressive &&
+    secondIsBalanced &&
+    best.score.total - second.score.total < 8
+  ) {
+    return second;
+  }
+
+  // If aggressive has noticeably worse readability, reject it.
+  if (
+    bestIsAggressive &&
+    secondIsBalanced &&
+    best.score.readability < second.score.readability - 10
+  ) {
+    return second;
+  }
+
+  // If aggressive has more penalties and only a small score advantage, reject it.
+  if (
+    bestIsAggressive &&
+    secondIsBalanced &&
+    best.score.penalties > second.score.penalties &&
+    best.score.total - second.score.total < 12
+  ) {
+    return second;
+  }
+
+  return best;
+}
+
+/**
+ * Generates one extra balanced retry candidate and keeps it
+ * only if it beats the current best output.
+ *
+ * Why this exists:
+ * - gives the user a useful "Try Again" option
+ * - avoids unstable aggressive retries
+ * - keeps the better version based on the same scoring system
+ *
+ * Safe behavior:
+ * - retry is balanced, not random strong rewriting
+ * - current result is kept unless retry clearly scores better
+ *
+ * Depends on:
+ * - scoreRewriteCandidate(inputText, outputText)
+ * - cleanArtifacts(text)
+ * - stripAiPhrases(text)
+ * - applyWordReplacements(text, strength, options)
+ * - varyRhythm(text, strength, mode, tone)
+ * - rewriteByTone(text, tone)
+ * - rewriteByMode(text, mode)
+ * - cleanupHumanStyle(text)
+ * - cleanupSentenceStarters(text)
+ * - repairSentenceBoundaries(text)
+ * - finalSentencePolish(text)
+ * - rebalanceParagraphs(text, options)
+ * - countParagraphs(text)
+ */
+export function humanizeTextRetry(
+  inputText: string,
+  currentOutputText: string,
+  tone: string = "natural",
+  mode: string = "standard"
+): string {
+  const originalParagraphCount = countParagraphs(inputText);
+
+  let retry = inputText;
+  retry = stripAiPhrases(retry);
+  retry = applyWordReplacements(retry, "medium", {
+    phraseBoost: 3,
+    wordBoost: 1,
+  });
+  retry = varyRhythm(retry, "medium", mode, tone);
+  retry = rewriteByTone(retry, tone);
+  retry = rewriteByMode(retry, mode);
+  retry = cleanupHumanStyle(retry);
+  retry = cleanupSentenceStarters(retry);
+  retry = repairSentenceBoundaries(retry);
+  retry = finalSentencePolish(retry);
+  retry = rebalanceParagraphs(retry, {
+    originalParagraphCount,
+    minParagraphs: Math.max(1, originalParagraphCount - 1),
+    maxParagraphs: originalParagraphCount + 1,
+    minSentencesPerParagraph: 2,
+    maxSentencesPerParagraph: 4,
+  });
+  retry = cleanArtifacts(retry);
+
+  const currentScore = scoreRewriteCandidate(inputText, currentOutputText);
+  const retryScore = scoreRewriteCandidate(inputText, retry);
+
+  if (retryScore.total > currentScore.total) {
+    return retry;
+  }
+
+  return currentOutputText;
 }
 
 

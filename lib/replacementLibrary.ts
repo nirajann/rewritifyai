@@ -359,6 +359,7 @@ export const PHRASE_REPLACEMENTS: Array<[RegExp, string]> = [
 [/\bhas many practical uses\b/gi, "has many practical uses"],
 [/\bworks well for\b/gi, "is well suited to"],
 [/\bis well suited for\b/gi, "works well for"],
+
 ];
 
 export const WORD_REPLACEMENTS: Array<[RegExp, string]> = [

@@ -109,13 +109,11 @@ export default function WorkspacePage() {
   const [documentTitle, setDocumentTitle] = useState("Untitled Document");
   const [currentDocumentId, setCurrentDocumentId] = useState<string | null>(null);
   const [versions, setVersions] = useState<VersionItem[]>([]);
-const [strength, setStrength] = useState<"light" | "medium" | "strong">("medium");
+  const [strength, setStrength] = useState<"light" | "medium" | "strong">("medium");
+  const [isRetrying, setIsRetrying] = useState(false);
+
   const searchParams = useSearchParams();
   const urlDocumentId = searchParams.get("id");
-
-  const xp = 1520;
-  const streak = 10;
-  const persona = "Scholar";
 
   useEffect(() => {
     const rawUser = localStorage.getItem("rewritify_user");
@@ -213,10 +211,13 @@ const [strength, setStrength] = useState<"light" | "medium" | "strong">("medium"
     setOutputText("");
     setNotes([]);
     setCopied(false);
+
     if (!inputText.trim()) {
       setError("Please enter some text first.");
+      setLoading(false);
       return;
     }
+
     try {
       const response = await fetch(`/api/${tool}`, {
         method: "POST",
@@ -255,6 +256,44 @@ const [strength, setStrength] = useState<"light" | "medium" | "strong">("medium"
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleTryAgain = async () => {
+    if (!inputText.trim() || !outputText.trim()) return;
+
+    try {
+      setIsRetrying(true);
+      setError("");
+
+      const res = await fetch("/api/humanize", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          retry: true,
+          inputText,
+          currentOutputText: outputText,
+          tone,
+          mode,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Retry failed");
+      }
+
+      if (typeof data.outputText === "string" && data.outputText.trim()) {
+        setOutputText(data.outputText);
+        setHelperMessage("Generated an alternate balanced variation.");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Retry failed");
+    } finally {
+      setIsRetrying(false);
     }
   };
 
@@ -339,6 +378,7 @@ const [strength, setStrength] = useState<"light" | "medium" | "strong">("medium"
     setActiveTool("humanize");
     setTone("natural");
     setMode("standard");
+    setStrength("medium");
     setHumanScoreState(91);
     setHelperMessage("Editor cleared. Paste text or upload a DOCX file to begin.");
   };
@@ -389,15 +429,13 @@ const [strength, setStrength] = useState<"light" | "medium" | "strong">("medium"
 
   return (
     <main className="min-h-screen bg-slate-50">
-      <div className="mx-auto max-w-7xl px-3 py-5 sm:px-4 md:px-6">
-        <section className="mb-5 rounded-3xl border border-slate-200 bg-white px-4 py-4 shadow-sm sm:px-5">
-          <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+      <div className="mx-auto max-w-[1600px] px-4 py-4 sm:px-5 md:px-6">
+        <section className="mb-4 rounded-2xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div className="min-w-0">
-              <h1 className="text-2xl font-bold text-slate-950 sm:text-3xl">
-                Workspace
-              </h1>
-              <p className="mt-1 max-w-2xl text-sm text-slate-500 sm:text-base">
-                Premium writing editor with focused tools and cleaner flow.
+              <h1 className="text-2xl font-bold text-slate-950">Workspace</h1>
+              <p className="mt-1 text-sm text-slate-500">
+                Focused writing tools with a cleaner editing flow.
               </p>
 
               <input
@@ -408,22 +446,14 @@ const [strength, setStrength] = useState<"light" | "medium" | "strong">("medium"
               />
             </div>
 
-            <div className="flex flex-wrap items-center gap-2 text-sm sm:gap-3">
-              <div className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-slate-700">
-                Persona: <span className="font-semibold text-slate-950">{persona}</span>
-              </div>
-              <div className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-slate-700">
-                XP: <span className="font-semibold text-emerald-600">{xp}</span>
-              </div>
-              <div className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-slate-700">
-                Streak: <span className="font-semibold text-slate-950">{streak} days</span>
-              </div>
+            <div className="text-xs text-slate-400">
+              {currentDocumentId ? "Saved document" : "Unsaved draft"}
             </div>
           </div>
         </section>
 
-        <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
-          <aside className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-2 xl:h-fit">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[220px_minmax(0,1fr)_320px]">
+          <aside className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm xl:h-fit">
             <p className="mb-4 text-sm font-semibold text-slate-950">Tools</p>
 
             <div className="flex gap-2 overflow-x-auto pb-1 xl:block xl:space-y-2 xl:overflow-visible xl:pb-0">
@@ -456,92 +486,143 @@ const [strength, setStrength] = useState<"light" | "medium" | "strong">("medium"
             </div>
           </aside>
 
-          <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 xl:col-span-7">
-  <div className="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-5">
-  <div>
-    <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-      Tone
-    </label>
-    <select
-      value={tone}
-      onChange={(e) => setTone(e.target.value)}
-      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-emerald-500"
-    >
-      <option value="natural">Natural</option>
-      <option value="formal">Formal</option>
-      <option value="friendly">Friendly</option>
-    </select>
-  </div>
+          <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+            <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
+              <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-[160px_160px_160px_140px_minmax(180px,1fr)]">
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Tone
+                  </label>
+                  <select
+                    value={tone}
+                    onChange={(e) => setTone(e.target.value)}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-emerald-500"
+                  >
+                    <option value="natural">Natural</option>
+                    <option value="formal">Formal</option>
+                    <option value="friendly">Friendly</option>
+                  </select>
+                </div>
 
-  <div>
-    <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-      Strength
-    </label>
-    <select
-      value={strength}
-      onChange={(e) =>
-        setStrength(e.target.value as "light" | "medium" | "strong")
-      }
-      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-emerald-500"
-    >
-      <option value="light">Light</option>
-      <option value="medium">Medium</option>
-      <option value="strong">Strong</option>
-    </select>
-  </div>
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Strength
+                  </label>
+                  <select
+                    value={strength}
+                    onChange={(e) =>
+                      setStrength(e.target.value as "light" | "medium" | "strong")
+                    }
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-emerald-500"
+                  >
+                    <option value="light">Light</option>
+                    <option value="medium">Medium</option>
+                    <option value="strong">Strong</option>
+                  </select>
+                </div>
 
-  <div>
-    <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-      Mode
-    </label>
-    <select
-      value={mode}
-      onChange={(e) => setMode(e.target.value)}
-      className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-emerald-500"
-    >
-      <option value="standard">Standard</option>
-      <option value="school">School</option>
-      <option value="report">Report</option>
-      <option value="thesis">Thesis</option>
-      <option value="research">Research</option>
-      <option value="proposal">Proposal</option>
-    </select>
-  </div>
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Mode
+                  </label>
+                  <select
+                    value={mode}
+                    onChange={(e) => setMode(e.target.value)}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none focus:border-emerald-500"
+                  >
+                    <option value="standard">Standard</option>
+                    <option value="school">School</option>
+                    <option value="report">Report</option>
+                    <option value="thesis">Thesis</option>
+                    <option value="research">Research</option>
+                    <option value="proposal">Proposal</option>
+                  </select>
+                </div>
 
-  <div>
-    <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
-      Words
-    </label>
-    <div className="rounded-xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm text-slate-700">
-      {inputWordCount} words
-    </div>
-  </div>
+                <div>
+                  <label className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+                    Words
+                  </label>
+                  <div className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-700">
+                    {inputWordCount} words
+                  </div>
+                </div>
 
-  <div className="flex items-end">
-    {isWorkingTool(activeTool) ? (
-      <button
-        onClick={() => handleTool(activeTool)}
-        disabled={loading || loadingDocument}
-        className="w-full rounded-xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:opacity-60"
-      >
-        {loadingDocument
-          ? "Loading..."
-          : loading
-          ? "Processing..."
-          : activeTool.charAt(0).toUpperCase() + activeTool.slice(1)}
-      </button>
-    ) : (
-      <button
-        disabled
-        className="w-full rounded-xl bg-slate-200 px-5 py-3 text-sm font-semibold text-slate-500"
-      >
-        Premium Tool
-      </button>
-    )}
-  </div>
-</div>
+                <div className="flex flex-col gap-2 xl:justify-end">
+                  <button
+                    onClick={() => isWorkingTool(activeTool) && handleTool(activeTool)}
+                    disabled={loading || loadingDocument || !isWorkingTool(activeTool)}
+                    className="w-full rounded-xl bg-emerald-500 px-5 py-3 text-sm font-semibold text-white transition hover:bg-emerald-600 disabled:opacity-60"
+                  >
+                    {loadingDocument
+                      ? "Loading..."
+                      : loading
+                      ? "Processing..."
+                      : isWorkingTool(activeTool)
+                      ? activeTool.charAt(0).toUpperCase() + activeTool.slice(1)
+                      : "Premium Tool"}
+                  </button>
 
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 lg:gap-5">
+                  <button
+                    type="button"
+                    onClick={handleTryAgain}
+                    disabled={isRetrying || !outputText.trim()}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isRetrying ? "Trying Again..." : "Try Again"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  onClick={handleCopy}
+                  type="button"
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  {copied ? "Copied" : "Copy"}
+                </button>
+
+                <button
+                  onClick={handleClear}
+                  type="button"
+                  className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-semibold text-rose-700 hover:bg-rose-100"
+                >
+                  Clear
+                </button>
+
+                <label className="cursor-pointer rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                  Upload DOCX
+                  <input
+                    type="file"
+                    accept=".docx"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleDocxUpload(file);
+                    }}
+                  />
+                </label>
+
+                <button
+                  onClick={handleExportPdf}
+                  type="button"
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Export PDF
+                </button>
+
+                <button
+                  onClick={handleExportDocx}
+                  type="button"
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Export Word
+                </button>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-4 2xl:grid-cols-2">
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                 <div className="mb-3 flex items-center justify-between">
                   <p className="text-sm font-semibold text-slate-950">Input</p>
@@ -557,7 +638,7 @@ const [strength, setStrength] = useState<"light" | "medium" | "strong">("medium"
                     }
                   }}
                   placeholder="Paste your text here..."
-                  className="min-h-[260px] w-full resize-none rounded-2xl border border-slate-200 bg-white p-4 text-sm leading-7 text-slate-900 placeholder:text-slate-400 outline-none focus:border-emerald-500 sm:min-h-[320px] lg:min-h-[520px] lg:p-5"
+                  className="min-h-[320px] w-full resize-none rounded-2xl border border-slate-200 bg-white p-4 text-sm leading-7 text-slate-900 placeholder:text-slate-400 outline-none focus:border-emerald-500 lg:min-h-[620px]"
                 />
               </div>
 
@@ -568,21 +649,21 @@ const [strength, setStrength] = useState<"light" | "medium" | "strong">("medium"
                 </div>
 
                 {activeTool === "detector" ? (
-                  <div className="min-h-[260px] rounded-2xl border border-emerald-200 bg-white p-4 text-sm leading-7 text-slate-700 sm:min-h-[320px] lg:min-h-[520px] lg:p-5">
+                  <div className="min-h-[320px] rounded-2xl border border-emerald-200 bg-white p-4 text-sm leading-7 text-slate-700 lg:min-h-[620px]">
                     <p className="text-lg font-semibold text-slate-950">AI Detector</p>
                     <p className="mt-3">
                       Premium module coming soon. This tool will estimate AI-likeness and naturalness.
                     </p>
                   </div>
                 ) : activeTool === "plagiarism" ? (
-                  <div className="min-h-[260px] rounded-2xl border border-emerald-200 bg-white p-4 text-sm leading-7 text-slate-700 sm:min-h-[320px] lg:min-h-[520px] lg:p-5">
+                  <div className="min-h-[320px] rounded-2xl border border-emerald-200 bg-white p-4 text-sm leading-7 text-slate-700 lg:min-h-[620px]">
                     <p className="text-lg font-semibold text-slate-950">Plagiarism Checker</p>
                     <p className="mt-3">
                       Premium module coming soon. This tool will check originality and similarity.
                     </p>
                   </div>
                 ) : (
-                  <div className="min-h-[260px] sm:min-h-[320px] lg:min-h-[520px]">
+                  <div className="min-h-[320px] lg:min-h-[620px]">
                     <AnimatedDiffOutput
                       inputText={inputText}
                       outputText={outputText}
@@ -593,53 +674,6 @@ const [strength, setStrength] = useState<"light" | "medium" | "strong">("medium"
               </div>
             </div>
 
-            <div className="mt-5 flex flex-wrap gap-3">
-              <button
-                onClick={handleCopy}
-                type="button"
-                className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:px-5"
-              >
-                {copied ? "Copied" : "Copy"}
-              </button>
-
-              <button
-                onClick={handleClear}
-                type="button"
-                className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700 hover:bg-rose-100 sm:px-5"
-              >
-                Clear
-              </button>
-
-              <label className="cursor-pointer rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:px-5">
-                Upload DOCX
-                <input
-                  type="file"
-                  accept=".docx"
-                  className="hidden"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) handleDocxUpload(file);
-                  }}
-                />
-              </label>
-
-              <button
-                onClick={handleExportPdf}
-                type="button"
-                className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:px-5"
-              >
-                Export PDF
-              </button>
-
-              <button
-                onClick={handleExportDocx}
-                type="button"
-                className="rounded-xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 sm:px-5"
-              >
-                Export Word
-              </button>
-            </div>
-
             {error && (
               <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
                 {error}
@@ -647,11 +681,16 @@ const [strength, setStrength] = useState<"light" | "medium" | "strong">("medium"
             )}
           </section>
 
-          <aside className="space-y-5 xl:col-span-3">
-            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-              <h2 className="text-xl font-bold text-slate-950">Insights</h2>
+          <aside className="space-y-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-slate-950">Insights</h2>
+                <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+                  Live
+                </span>
+              </div>
 
-              <div className="mt-5 rounded-3xl border border-slate-200 bg-slate-50 p-5">
+              <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-5">
                 <div className="mx-auto flex h-28 w-28 items-center justify-center rounded-full border-[10px] border-emerald-500 bg-white">
                   <div className="text-center">
                     <p className="text-3xl font-bold text-slate-950">{humanScoreState}%</p>
@@ -676,7 +715,7 @@ const [strength, setStrength] = useState<"light" | "medium" | "strong">("medium"
               </div>
             </div>
 
-            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <p className="text-sm font-semibold text-slate-950">Versions</p>
 
               {versions.length > 0 ? (
@@ -686,14 +725,12 @@ const [strength, setStrength] = useState<"light" | "medium" | "strong">("medium"
                       key={version.id}
                       className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-700"
                     >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <div className="font-semibold text-slate-950">
-                            Version {version.version_number}
-                          </div>
-                          <div className="mt-1 text-xs text-slate-500">
-                            {new Date(version.created_at).toLocaleString()}
-                          </div>
+                      <div>
+                        <div className="font-semibold text-slate-950">
+                          Version {version.version_number}
+                        </div>
+                        <div className="mt-1 text-xs text-slate-500">
+                          {new Date(version.created_at).toLocaleString()}
                         </div>
                       </div>
 
@@ -721,7 +758,7 @@ const [strength, setStrength] = useState<"light" | "medium" | "strong">("medium"
               )}
             </div>
 
-            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
               <p className="text-sm font-semibold text-slate-950">Processing Notes</p>
 
               {notes.length > 0 ? (

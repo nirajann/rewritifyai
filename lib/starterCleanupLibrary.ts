@@ -123,4 +123,10 @@ export const STARTER_CLEANUP_PATTERNS: Array<[RegExp, string]> = [
 [/\bWhere it can be used\b/gi, "where it can be used"],
 [/\bWhere students can learn\b/gi, "where students can learn"],
 [/\bWhere professionals use\b/gi, "where professionals use"],
+[/\bThis field is key\b/gi, "This field matters"],
+[/\bSince it explains\b/gi, "because it explains"],
+[/\bIncluding education, healthcare, business, and counseling\b/gi, "It is used in education, healthcare, business, and counseling"],
+[/\bOne of the main goals of\b/gi, "One goal of"],
+[/\bis considered a valuable and growing field in modern society\b/gi, "is seen as a useful and growing field in modern society"],
 ];
+
