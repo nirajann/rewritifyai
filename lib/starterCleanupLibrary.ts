@@ -59,6 +59,14 @@ export const STARTER_CLEANUP_PATTERNS: Array<[RegExp, string]> = [
   [/\bAnd this\b/gi, "This"],
   [/\bAnd these\b/gi, "These"],
   [/\bAnd it\b/gi, "It"],
+  [/\bAnd they\b/gi, "They"],
+  [/\bAnd this can\b/gi, "This can"],
+  [/\bAnd this also\b/gi, "This also"],
+  [/\bAnd that\b/gi, "That"],
+  [/\bAnd those\b/gi, "Those"],
+  [/\bAnd people can\b/gi, "People can"],
+  [/\bAnd users can\b/gi, "Users can"],
+  [/\bAnd developers can\b/gi, "Developers can"],
 
   // Weak "Although / While / Especially" starters
   [/\bAlthough react\b/gi, "React"],
@@ -66,8 +74,15 @@ export const STARTER_CLEANUP_PATTERNS: Array<[RegExp, string]> = [
   [/\bAlthough nursing\b/gi, "Nursing"],
   [/\bWhile react\b/gi, "React"],
   [/\bWhile Java\b/gi, "Java"],
+  [/\bWhile this\b/gi, "This"],
+  [/\bWhile these\b/gi, "These"],
+  [/\bWhile it\b/gi, "It"],
+  [/\bAlthough this\b/gi, "This"],
+  [/\bAlthough these\b/gi, "These"],
+  [/\bAlthough it\b/gi, "It"],
   [/\bEspecially for\b/gi, "Particularly for"],
   [/\bEspecially in\b/gi, "Particularly in"],
+  [/\bParticularly when\b/gi, "This is especially true when"],
 
   // Bad split leftovers
   [/\bThis is possible because\.\s+/gi, "This is possible because "],
@@ -97,6 +112,10 @@ export const STARTER_CLEANUP_PATTERNS: Array<[RegExp, string]> = [
   [/\bFor this reason\b/gi, "Because of this"],
   [/\bIn this way\b/gi, "This way"],
   [/\bAt the same time\b/gi, "At the same time"],
+  [/\bIn addition to this\b/gi, "In addition"],
+  [/\bOn top of this\b/gi, "On top of that"],
+  [/\bAs such\b/gi, "So"],
+  [/\bIn turn\b/gi, "This in turn"],
 
   // Sentence-start polish
   [/\bThis improves the\b/gi, "This improves the"],
@@ -128,5 +147,63 @@ export const STARTER_CLEANUP_PATTERNS: Array<[RegExp, string]> = [
 [/\bIncluding education, healthcare, business, and counseling\b/gi, "It is used in education, healthcare, business, and counseling"],
 [/\bOne of the main goals of\b/gi, "One goal of"],
 [/\bis considered a valuable and growing field in modern society\b/gi, "is seen as a useful and growing field in modern society"],
+
+  // More weak "Which..." starters that show up in AI-edited output
+  [/\bWhich can\b/gi, "This can"],
+  [/\bWhich often\b/gi, "This often"],
+  [/\bWhich also\b/gi, "This also"],
+  [/\bWhich still\b/gi, "This still"],
+  [/\bWhich gives users\b/gi, "This gives users"],
+  [/\bWhich gives developers\b/gi, "This gives developers"],
+  [/\bWhich lets\b/gi, "This lets"],
+  [/\bWhich leads to\b/gi, "This leads to"],
+  [/\bWhich results in\b/gi, "This results in"],
+  [/\bWhich can help\b/gi, "This can help"],
+  [/\bWhich can make\b/gi, "This can make"],
+  [/\bWhich can improve\b/gi, "This can improve"],
+  [/\bWhich can reduce\b/gi, "This can reduce"],
+
+  // More weak "Because..." and "Since..." openings
+  [/\bBecause this helps\b/gi, "This helps"],
+  [/\bBecause this makes\b/gi, "This makes"],
+  [/\bBecause this improves\b/gi, "This improves"],
+  [/\bBecause they\b/gi, "Since they"],
+  [/\bBecause users\b/gi, "Since users"],
+  [/\bBecause developers\b/gi, "Since developers"],
+  [/\bSince this\b/gi, "Because this"],
+  [/\bSince these\b/gi, "Because these"],
+
+  // More carry-over "Where..." fragments
+  [/\bWhere teams can\b/gi, "where teams can"],
+  [/\bWhere businesses can\b/gi, "where businesses can"],
+  [/\bWhere researchers can\b/gi, "where researchers can"],
+  [/\bWhere teachers can\b/gi, "where teachers can"],
+  [/\bWhere nurses can\b/gi, "where nurses can"],
+
+  // Awkward "This is because..." leftovers
+  [/\bThis is because it helps\b/gi, "This helps because it"],
+  [/\bThis is because it makes\b/gi, "This makes it possible to"],
+  [/\bThis is because it allows\b/gi, "This allows"],
+  [/\bThis is because they can\b/gi, "They can do this because"],
+  [/\bThat is because it\b/gi, "That happens because it"],
+
+  // Sentence openings that sound essay-like or machine-clean
+  [/\bIt is important to note that\b/gi, ""],
+  [/\bIt should be noted that\b/gi, ""],
+  [/\bIt is worth noting that\b/gi, ""],
+  [/\bIt is worth mentioning that\b/gi, ""],
+  [/\bIn today's world\b/gi, "Today"],
+  [/\bIn the modern world\b/gi, "Today"],
+  [/\bOverall,?\b/gi, "Overall,"],
+  [/\bFurthermore,?\b/gi, "Also,"],
+  [/\bMoreover,?\b/gi, "Also,"],
+  [/\bAdditionally,?\b/gi, "Also,"],
+
+  // Broken lower-case / abrupt opener repair
+  [/\bThis means a\b/gi, "This means"],
+  [/\bThis is another reason\b/gi, "Another reason is"],
+  [/\bThis is one reason\b/gi, "One reason is"],
+  [/\bThat is why\b/gi, "That is why"],
+  [/\bThis is why\b/gi, "This is why"],
 ];
 

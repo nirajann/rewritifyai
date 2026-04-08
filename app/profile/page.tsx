@@ -136,7 +136,7 @@ export default function ProfilePage() {
             Profile Settings
           </h1>
           <p className="mt-2 text-slate-600">
-            Manage your account details, plan, and billing area.
+            Manage your account details and review your current beta access.
           </p>
         </div>
 
@@ -294,10 +294,11 @@ export default function ProfilePage() {
                 <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                   <div>
                     <h3 className="text-xl font-bold text-slate-950">
-                      Plan & Billing
+                      Plan Overview
                     </h3>
                     <p className="mt-1 text-sm text-slate-500">
-                      Manage your subscription and unlock premium tools.
+                      Daily rewrite limits are active for beta accounts, but
+                      billing and higher-tier access are not fully active yet.
                     </p>
                   </div>
 
@@ -314,46 +315,50 @@ export default function ProfilePage() {
                       Current access
                     </p>
                     <ul className="mt-3 space-y-2 text-sm text-slate-600">
-                      <li>• Humanize, Rewrite, Paraphrase</li>
-                      <li>• Save documents and versions</li>
-                      <li>• Basic workspace tools</li>
+                      <li>Humanize, rewrite, and paraphrase</li>
+                      <li>Saved documents and versions</li>
+                      <li>Basic workspace tools</li>
                     </ul>
                   </div>
 
                   <div className="rounded-2xl border border-slate-200 bg-white p-4">
                     <p className="text-sm font-semibold text-slate-950">
-                      Premium upgrades
+                      Planned additions
                     </p>
                     <ul className="mt-3 space-y-2 text-sm text-slate-600">
-                      <li>• AI Detector</li>
-                      <li>• Plagiarism Checker</li>
-                      <li>• Higher usage limits</li>
+                      <li>AI Detector placeholder</li>
+                      <li>Plagiarism Checker placeholder</li>
+                      <li>Higher rewrite limits are not live yet</li>
                     </ul>
                   </div>
 
                   <div className="rounded-2xl border border-slate-200 bg-white p-4">
                     <p className="text-sm font-semibold text-slate-950">
-                      Billing status
+                      Beta status
                     </p>
                     <p className="mt-3 text-sm text-slate-600">
                       You are currently on the{" "}
                       <span className="font-semibold">{prettyPlan}</span> plan.
                     </p>
+                    <p className="mt-2 text-sm text-slate-600">
+                      Billing actions are not live yet. Use the pricing page for
+                      current beta plan information.
+                    </p>
 
                     <div className="mt-4 flex flex-wrap gap-3">
-                      <button
-                        type="button"
+                      <a
+                        href="/pricing"
                         className="rounded-2xl bg-slate-900 px-4 py-3 text-sm font-semibold text-white hover:bg-slate-800"
                       >
-                        Upgrade Plan
-                      </button>
+                        View Pricing
+                      </a>
 
-                      <button
-                        type="button"
+                      <a
+                        href="/support"
                         className="rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50"
                       >
-                        Manage Billing
-                      </button>
+                        Contact Support
+                      </a>
                     </div>
                   </div>
                 </div>

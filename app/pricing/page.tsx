@@ -10,7 +10,9 @@ export default function PricingPage() {
             Choose your premium writing plan
           </h1>
           <p className="mt-3 text-lg text-slate-600">
-            Start simple, then upgrade for deeper rewriting power and premium workspace features.
+            Free beta accounts currently include 25 tracked rewrites per UTC
+            day. Billing is not active yet, so paid plan labels are still
+            informational.
           </p>
         </div>
 
@@ -21,9 +23,10 @@ export default function PricingPage() {
             <p className="mt-2 text-slate-600">For trying the workspace.</p>
 
             <ul className="mt-6 space-y-3 text-sm text-slate-700">
-              <li>• Basic rewriting tools</li>
-              <li>• Limited daily usage</li>
-              <li>• Basic notes and scores</li>
+              <li>25 tracked rewrites per UTC day</li>
+              <li>Core rewriting tools</li>
+              <li>Saved documents and versions</li>
+              <li>Basic notes and score estimates</li>
             </ul>
 
             <button className="mt-8 w-full rounded-2xl border border-slate-300 bg-white px-5 py-3 text-sm font-semibold text-slate-800 hover:bg-slate-50">
@@ -37,10 +40,10 @@ export default function PricingPage() {
             <p className="mt-2 text-slate-300">For serious students and professionals.</p>
 
             <ul className="mt-6 space-y-3 text-sm text-slate-200">
-              <li>• Humanize, paraphrase, improve</li>
-              <li>• Premium modes and tone control</li>
-              <li>• Dashboard and achievements</li>
-              <li>• More daily usage</li>
+              <li>Humanize, paraphrase, and improve</li>
+              <li>More tone and mode control</li>
+              <li>Workspace and profile access</li>
+              <li>Plan details may change during beta</li>
             </ul>
 
             <button className="mt-8 w-full rounded-2xl bg-white px-5 py-3 text-sm font-semibold text-slate-950 hover:opacity-90">
@@ -54,10 +57,10 @@ export default function PricingPage() {
             <p className="mt-2 text-slate-700">For premium writing workflows and teams.</p>
 
             <ul className="mt-6 space-y-3 text-sm text-slate-700">
-              <li>• Everything in Pro</li>
-              <li>• File upload and export</li>
-              <li>• Deeper scoring insights</li>
-              <li>• Priority processing</li>
+              <li>Everything in Pro</li>
+              <li>DOCX upload and export tools</li>
+              <li>Saved-document workflow</li>
+              <li>Some planned premium features are still in development</li>
             </ul>
 
             <button className="mt-8 w-full rounded-2xl bg-slate-950 px-5 py-3 text-sm font-semibold text-white hover:opacity-90">

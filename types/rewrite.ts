@@ -14,6 +14,17 @@ export type RewriteRequest = {
   wordCount?: number;
   title?: string;
   documentId?: string;
+  userId?: string | null;
+  strength?: "light" | "medium" | "strong";
+};
+
+export type RewriteQuotaStatus = {
+  plan: string;
+  period: "day";
+  limit: number;
+  used: number;
+  remaining: number;
+  resetAt: string;
 };
 
 export type RewriteSuccessResponse = {
@@ -26,11 +37,14 @@ export type RewriteSuccessResponse = {
   humanScore: number;
   notes: string[];
   documentId?: string;
+  quota?: RewriteQuotaStatus;
 };
 
 export type RewriteErrorResponse = {
   success: false;
   message: string;
+  code?: "auth_required" | "quota_exceeded";
+  quota?: RewriteQuotaStatus;
 };
 
 export type RewriteResponse = RewriteSuccessResponse | RewriteErrorResponse;

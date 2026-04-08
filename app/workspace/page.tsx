@@ -32,6 +32,15 @@ type ApiResponse = {
   humanScore?: number;
   message?: string;
   documentId?: string;
+  code?: "auth_required" | "quota_exceeded";
+  quota?: {
+    plan: string;
+    period: "day";
+    limit: number;
+    used: number;
+    remaining: number;
+    resetAt: string;
+  };
 };
 
 type VersionItem = {
@@ -114,6 +123,18 @@ export default function WorkspacePage() {
 
   const searchParams = useSearchParams();
   const urlDocumentId = searchParams.get("id");
+
+  const formatQuotaReset = (resetAt?: string) => {
+    if (!resetAt) return "later";
+
+    const parsed = new Date(resetAt);
+    if (Number.isNaN(parsed.getTime())) return "later";
+
+    return parsed.toLocaleString(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+  };
 
   useEffect(() => {
     const rawUser = localStorage.getItem("rewritify_user");
@@ -218,6 +239,13 @@ export default function WorkspacePage() {
       return;
     }
 
+    if (!user?.id) {
+      setError("Sign in to use rewrite tools during beta. Daily limits are tracked per account.");
+      setHelperMessage("Sign in to start a tracked beta rewrite session.");
+      setLoading(false);
+      return;
+    }
+
     try {
       const response = await fetch(`/api/${tool}`, {
         method: "POST",
@@ -239,6 +267,14 @@ export default function WorkspacePage() {
       const data: ApiResponse = await response.json();
 
       if (!response.ok || !data.success) {
+        if (data.code === "quota_exceeded") {
+          setHelperMessage(
+            `Daily limit reached. Your access resets ${formatQuotaReset(data.quota?.resetAt)}.`
+          );
+        } else if (data.code === "auth_required") {
+          setHelperMessage("Sign in to use tracked beta rewrites.");
+        }
+
         throw new Error(data.message || "Something went wrong");
       }
 
@@ -251,7 +287,11 @@ export default function WorkspacePage() {
         await refreshVersions(data.documentId);
       }
 
-      setHelperMessage("Your text has been refined and saved.");
+      setHelperMessage(
+        data.quota
+          ? `Your text has been refined and saved. ${data.quota.remaining} rewrites remain today.`
+          : "Your text has been refined and saved."
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
     } finally {
@@ -261,6 +301,12 @@ export default function WorkspacePage() {
 
   const handleTryAgain = async () => {
     if (!inputText.trim() || !outputText.trim()) return;
+
+    if (!user?.id) {
+      setError("Sign in to use rewrite tools during beta. Daily limits are tracked per account.");
+      setHelperMessage("Sign in to generate another tracked variation.");
+      return;
+    }
 
     try {
       setIsRetrying(true);
@@ -277,18 +323,31 @@ export default function WorkspacePage() {
           currentOutputText: outputText,
           tone,
           mode,
+          userId: user.id,
         }),
       });
 
-      const data = await res.json();
+      const data: ApiResponse = await res.json();
 
-      if (!res.ok) {
-        throw new Error(data?.error || "Retry failed");
+      if (!res.ok || !data.success) {
+        if (data.code === "quota_exceeded") {
+          setHelperMessage(
+            `Daily limit reached. Your access resets ${formatQuotaReset(data.quota?.resetAt)}.`
+          );
+        } else if (data.code === "auth_required") {
+          setHelperMessage("Sign in to use tracked beta rewrites.");
+        }
+
+        throw new Error(data.message || "Retry failed");
       }
 
       if (typeof data.outputText === "string" && data.outputText.trim()) {
         setOutputText(data.outputText);
-        setHelperMessage("Generated an alternate balanced variation.");
+        setHelperMessage(
+          data.quota
+            ? `Generated an alternate variation. ${data.quota.remaining} rewrites remain today.`
+            : "Generated an alternate variation."
+        );
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Retry failed");
@@ -349,8 +408,8 @@ export default function WorkspacePage() {
 
     setHelperMessage(
       tool === "detector"
-        ? "AI Detector is a premium feature. It will estimate AI-likeness and naturalness."
-        : "Plagiarism Checker is a premium feature. It will check originality and similarity."
+        ? "AI Detector is not live yet. The current tile is only a placeholder for a planned feature."
+        : "Plagiarism Checker is not live yet. The current tile is only a placeholder for a planned feature."
     );
   };
 
@@ -435,7 +494,8 @@ export default function WorkspacePage() {
             <div className="min-w-0">
               <h1 className="text-2xl font-bold text-slate-950">Workspace</h1>
               <p className="mt-1 text-sm text-slate-500">
-                Focused writing tools with a cleaner editing flow.
+                Focused writing tools with a cleaner editing flow. Beta rewrites
+                are tracked per signed-in account.
               </p>
 
               <input
@@ -652,14 +712,16 @@ export default function WorkspacePage() {
                   <div className="min-h-[320px] rounded-2xl border border-emerald-200 bg-white p-4 text-sm leading-7 text-slate-700 lg:min-h-[620px]">
                     <p className="text-lg font-semibold text-slate-950">AI Detector</p>
                     <p className="mt-3">
-                      Premium module coming soon. This tool will estimate AI-likeness and naturalness.
+                      This feature is not live yet. The current tile is only a
+                      placeholder for a planned detector.
                     </p>
                   </div>
                 ) : activeTool === "plagiarism" ? (
                   <div className="min-h-[320px] rounded-2xl border border-emerald-200 bg-white p-4 text-sm leading-7 text-slate-700 lg:min-h-[620px]">
                     <p className="text-lg font-semibold text-slate-950">Plagiarism Checker</p>
                     <p className="mt-3">
-                      Premium module coming soon. This tool will check originality and similarity.
+                      This feature is not live yet. The current tile is only a
+                      placeholder for a planned originality checker.
                     </p>
                   </div>
                 ) : (
@@ -694,7 +756,9 @@ export default function WorkspacePage() {
                 <div className="mx-auto flex h-28 w-28 items-center justify-center rounded-full border-[10px] border-emerald-500 bg-white">
                   <div className="text-center">
                     <p className="text-3xl font-bold text-slate-950">{humanScoreState}%</p>
-                    <p className="text-xs font-medium text-emerald-700">Human Score</p>
+                    <p className="text-xs font-medium text-emerald-700">
+                      Human score estimate
+                    </p>
                   </div>
                 </div>
 
@@ -708,7 +772,9 @@ export default function WorkspacePage() {
                     <span className="text-sm font-semibold text-slate-950 capitalize">{mode}</span>
                   </div>
                   <div className="flex items-center justify-between rounded-xl bg-white px-4 py-3">
-                    <span className="text-sm text-slate-500">Clarity Gain</span>
+                    <span className="text-sm text-slate-500">
+                      Estimated clarity gain
+                    </span>
                     <span className="text-sm font-semibold text-emerald-700">{clarityGain}</span>
                   </div>
                 </div>

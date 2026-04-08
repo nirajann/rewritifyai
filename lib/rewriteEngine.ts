@@ -1,11 +1,21 @@
 import { RewriteRequest } from "@/lib/validators/rewrite";
+import { processTextWithAI } from "@/lib/aiClient";
+import {
+  buildSystemPrompt,
+  buildUserInstruction,
+} from "@/lib/promptBuilder";
 import {
   buildProcessingNotes,
   countWords,
+  expandText,
   estimateHumanScore,
+  grammarText,
   humanizeText,
+  improveText,
   paraphraseText,
   prepareHumanizeInput,
+  rewriteText,
+  shortenText,
 } from "@/lib/textTools";
 import {
   getDocumentVersions,
@@ -13,6 +23,11 @@ import {
   saveDocument,
   saveDocumentVersion,
 } from "@/lib/documentService";
+import {
+  assertRewriteQuota,
+  getPostRewriteQuota,
+} from "@/lib/quotaService";
+import type { RewriteQuotaStatus } from "@/types/rewrite";
 
 export type RewriteTool =
   | "humanize"
@@ -37,6 +52,7 @@ type RewriteSuccessResponse = {
   humanScore: number;
   notes: string[];
   documentId?: string | null;
+  quota?: RewriteQuotaStatus;
 };
 
 export async function rewriteEngine({
@@ -50,56 +66,58 @@ export async function rewriteEngine({
   userId,
   strength = "medium",
 }: RewriteEngineParams): Promise<RewriteSuccessResponse> {
+  const quota = await assertRewriteQuota(userId);
   let sourceInput = inputText;
   let outputText = inputText;
 
-switch (tool) {
-  case "humanize": {
+  if (tool === "humanize") {
     const prepared = prepareHumanizeInput(inputText);
     sourceInput = prepared.cleaned;
-    outputText = humanizeText(prepared.cleaned, tone, mode, strength);
-    break;
-  }
+    outputText = humanizeText(sourceInput, tone, mode, strength);
+  } else {
+    outputText = await processTextWithAI({
+      tool,
+      inputText: sourceInput,
+      tone,
+      mode,
+      wordCount,
+      strength,
+      systemPrompt: buildSystemPrompt(),
+      userInstruction: buildUserInstruction({
+        tool,
+        tone,
+        mode,
+        wordCount,
+        strength,
+      }),
+    });
 
-  case "paraphrase": {
-    outputText = paraphraseText(inputText, tone, mode, strength);
-    break;
+    if (!outputText.trim()) {
+      switch (tool) {
+        case "paraphrase":
+          outputText = paraphraseText(sourceInput, tone, mode, strength);
+          break;
+        case "rewrite":
+          outputText = rewriteText(sourceInput, tone, mode, strength);
+          break;
+        case "improve":
+          outputText = improveText(sourceInput, tone, mode, strength);
+          break;
+        case "expand":
+          outputText = expandText(sourceInput, tone, mode, strength);
+          break;
+        case "shorten":
+          outputText = shortenText(sourceInput, tone, mode, strength);
+          break;
+        case "grammar":
+          outputText = grammarText(sourceInput);
+          break;
+        case "humanize":
+          outputText = humanizeText(sourceInput, tone, mode, strength);
+          break;
+      }
+    }
   }
-
-  case "rewrite": {
-    outputText = humanizeText(inputText, tone, mode, strength);
-    break;
-  }
-
-  case "improve": {
-    outputText = humanizeText(inputText, tone, mode, strength);
-    break;
-  }
-
-  case "expand": {
-    outputText =
-      humanizeText(inputText, tone, mode, strength) +
-      " This version adds a little more detail and clarity.";
-    break;
-  }
-
-  case "shorten": {
-    const parts = inputText.split(/(?<=[.!?])\s+/);
-    outputText = parts
-      .slice(0, Math.max(1, Math.ceil(parts.length * 0.7)))
-      .join(" ");
-    break;
-  }
-
-  case "grammar": {
-    outputText = inputText
-      .replace(/\bi\b/g, "I")
-      .replace(/\bdont\b/gi, "don't")
-      .replace(/\bcant\b/gi, "can't")
-      .replace(/\bwont\b/gi, "won't");
-    break;
-  }
-}
   
 
   const finalWordCount = countWords(outputText);
@@ -136,13 +154,13 @@ switch (tool) {
       wordCount: finalWordCount || wordCount || 0,
       humanScore,
     });
-
-    await logUsage({
-      userId: userId || null,
-      tool,
-      wordCount: finalWordCount || wordCount || 0,
-    });
   }
+
+  await logUsage({
+    userId: userId || null,
+    tool,
+    wordCount: finalWordCount || wordCount || 0,
+  });
 
   return {
     success: true,
@@ -154,5 +172,6 @@ switch (tool) {
     humanScore,
     notes,
     documentId: finalDocumentId,
+    quota: getPostRewriteQuota(quota),
   };
 }

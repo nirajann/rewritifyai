@@ -31,21 +31,25 @@ export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
   const desktopMenuRef = useRef<HTMLDivElement | null>(null);
+  const closeMenus = () => {
+    setDesktopMenuOpen(false);
+    setMobileMenuOpen(false);
+  };
 
   useEffect(() => {
-    const rawUser = localStorage.getItem("rewritify_user");
+    async function syncUserState() {
+      const rawUser = localStorage.getItem("rewritify_user");
 
-    if (!rawUser) {
-      setUser(null);
-      setProfile(null);
-      return;
-    }
+      if (!rawUser) {
+        setUser(null);
+        setProfile(null);
+        return;
+      }
 
-    try {
-      const parsedUser = JSON.parse(rawUser) as StoredUser;
-      setUser(parsedUser);
+      try {
+        const parsedUser = JSON.parse(rawUser) as StoredUser;
+        setUser(parsedUser);
 
-      async function loadProfile() {
         try {
           const res = await fetch(`/api/auth/me?userId=${parsedUser.id}`);
           const data = await res.json();
@@ -56,13 +60,13 @@ export default function Navbar() {
         } catch {
           // ignore
         }
+      } catch {
+        setUser(null);
+        setProfile(null);
       }
-
-      loadProfile();
-    } catch {
-      setUser(null);
-      setProfile(null);
     }
+
+    void syncUserState();
   }, [pathname]);
 
   useEffect(() => {
@@ -89,15 +93,9 @@ export default function Navbar() {
     };
   }, []);
 
-  useEffect(() => {
-    setDesktopMenuOpen(false);
-    setMobileMenuOpen(false);
-  }, [pathname]);
-
   const handleLogout = () => {
     localStorage.removeItem("rewritify_user");
-    setDesktopMenuOpen(false);
-    setMobileMenuOpen(false);
+    closeMenus();
     router.push("/auth");
   };
 
@@ -256,20 +254,23 @@ export default function Navbar() {
                     <div className="p-2">
                       <Link
                         href="/profile"
+                        onClick={closeMenus}
                         className="flex w-full items-center rounded-xl px-3 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-950"
                       >
                         Profile
                       </Link>
 
                       <Link
-                        href="/profile"
+                        href="/pricing"
+                        onClick={closeMenus}
                         className="flex w-full items-center rounded-xl px-3 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-950"
                       >
-                        Billing
+                        Pricing
                       </Link>
 
                       <Link
                         href="/profile"
+                        onClick={closeMenus}
                         className="flex w-full items-center rounded-xl px-3 py-3 text-sm font-medium text-slate-700 transition hover:bg-slate-50 hover:text-slate-950"
                       >
                         Settings
@@ -338,14 +339,16 @@ export default function Navbar() {
             {user ? (
               <div className="mt-3 border-t border-slate-100 pt-3">
                 <Link
-                  href="/profile"
+                  href="/pricing"
+                  onClick={closeMenus}
                   className="mb-2 block rounded-xl px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
                 >
-                  Billing
+                  Pricing
                 </Link>
 
                 <Link
                   href="/profile"
+                  onClick={closeMenus}
                   className="mb-2 block rounded-xl px-4 py-3 text-sm font-medium text-slate-700 hover:bg-slate-50"
                 >
                   Settings
